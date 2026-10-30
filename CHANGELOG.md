@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `import pvsld.sizing` no longer loads ezdxf: the spec-file reader moved to `pvsld.specfile` (still re-exported by `pvsld.service`). This cuts about 3 s from an on-device start (Pyodide, ENG-014).
+
 ## [0.6.1] - 2026-10-13
 
 The draft notice is part of every result that delivers a drawing, so the user reads it whatever model relays the result; and the user guide covers Copilot CLI and Antigravity CLI.

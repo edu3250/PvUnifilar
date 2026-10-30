@@ -18,8 +18,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from pvsld.service import SpecFileError, load_spec_file
 from pvsld.sizing.models import SizingInputError, SizingRequest
+from pvsld.specfile import SpecFileError, load_spec_file
 
 
 def _format(error: ValidationError) -> str:
