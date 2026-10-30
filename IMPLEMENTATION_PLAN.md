@@ -733,6 +733,48 @@ would have left three copies of the workflow to keep equal.
 
 **Status:** In Progress (3.7.1 to 3.7.3 merged, PRs #43 to #45; released as v0.6.0 on 2026-10-13, the first version on PyPI; 3.7.4: real prompts with the published package done in Copilot CLI and Antigravity CLI, the section per client in the user guide in review; open: the MCP registry)
 
+### Stage 3.8: Engine API for the PvUnifilar editor (approved by the owner 2026-10-30)
+
+**Goal:** `pvsld` serves as the engine of the interactive editor (repository
+`edu3250/PvUnifilar-modular`): the editor places, connects and evaluates components through public
+engine APIs, while the plugin keeps working unchanged.
+
+**Requests:** the editor session sent the P0 requirements ENG-001 to ENG-005 (source:
+`docs/engineering/PVSLD_REQUIREMENTS.md` in that repository). Order approved: 001 -> 002 -> 005 ->
+004 -> 003. ENG-014 (lightweight core for Pyodide) is P1; its first part (sizing imports without
+ezdxf) shipped in PR #51.
+
+**Owner decisions (2026-10-30):**
+- The palette holds only the types the engine calculates today; other symbols join when the
+  engine does.
+- The junction dot gets four anchors at the centre of each edge, in the descriptor only.
+- Adding catalogue equipment is a plugin feature; app users cannot, only the owner as administrator.
+- Inverter backfeed towards the array is assumed 0 A (see `docs/research/proy-nom-001-sede-2018-art-690.md`).
+
+#### Stage 3.8.1: ENG-001 palette descriptors
+**Goal**: `pvsld.palette` builds a versioned document (`pvsld.palette/1`): 15 types with full symbol
+geometry, bounds, ports and attributes, the JSON Schema of their spec section, and the reviewed
+catalogue equipment with its provenance. Engine-defined types (SPD, interconnection point, load
+centre, meter, grid, electrode, junction, terminal, PV connector) carry no manufacturer.
+**Success Criteria**: the editor draws each type from the descriptor, and the DXF from the same
+`SymbolSpec`; `pvsld palette [--json | --schema]` prints it.
+**Tests**: `tests/test_palette.py` (round trip descriptor -> `SymbolSpec` for every type, ports,
+anchors, provenance, determinism, schema, CLI); `tests/test_import_footprint.py` covers the module.
+**Status**: In Progress
+**Out of scope**: the variable combiner box (ENG-004) and typed DC+/DC- ports (ENG-012, not approved).
+
+#### Stage 3.8.2: ENG-002 draft evaluation
+**Status**: Not Started
+
+#### Stage 3.8.3: ENG-005 manually fixed values
+**Status**: Not Started
+
+#### Stage 3.8.4: ENG-004 DC protection box contents
+**Status**: Not Started
+
+#### Stage 3.8.5: ENG-003 topology mapping (1 inverter, up to 2 strings first)
+**Status**: Not Started
+
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:
