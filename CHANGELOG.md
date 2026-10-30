@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `pvsld.palette` and `pvsld palette [--json | --schema]`: the editor palette (ENG-001). It lists the 15 types the engine calculates, each with full symbol geometry, ports, attributes and the JSON Schema of its spec section, plus the reviewed catalogue equipment with provenance. The junction gets four anchors at the centre of each edge.
+
 ### Changed
 
 - `import pvsld.sizing` no longer loads ezdxf: the spec-file reader moved to `pvsld.specfile` (still re-exported by `pvsld.service`). This cuts about 3 s from an on-device start (Pyodide, ENG-014).

@@ -13,6 +13,7 @@ Usage::
     pvsld pro new DIR | design SHEET.xlsx -o DIR [--no-autocad]
     pvsld symbols build [-o PATH] [--png PATH] [--check] | list [--json] | validate [PATH]
     pvsld sheet import TEMPLATE.dwg [-o PATH] | check [PATH]
+    pvsld palette [--json | --schema]
 
 ``validate`` parses the specification against the parameter model and runs the rule pack
 ``mx-gd-2026.10``; the exit code is 1 when a rule of severity ``E`` fails. ``generate`` validates
@@ -28,7 +29,8 @@ calculation report (xlsx and pdf), the project sheet and the bill of materials o
 ``design`` does everything in one step for the plugin's quick mode (:mod:`pvsld.design`);
 ``pro`` is the professional mode, driven by the project sheet (:mod:`pvsld.design.pro`).
 ``symbols`` builds, lists and validates the symbol library (``symbols/pvsld-symbols.dxf``, see
-:mod:`pvsld.symbols.cfe.cli`).
+:mod:`pvsld.symbols.cfe.cli`). ``palette`` prints the editor palette: the placeable types with
+their symbols and the catalogue equipment (:mod:`pvsld.palette`).
 Findings are printed in Spanish, as the reviewers read them; the CLI itself speaks English.
 """
 
@@ -415,6 +417,24 @@ def _finish(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
+def _palette(args: argparse.Namespace) -> int:
+    from pvsld.palette import build_palette, palette_json_schema
+
+    if args.schema:
+        print(json.dumps(palette_json_schema(), indent=2, ensure_ascii=False))
+        return 0
+    palette = build_palette()
+    if args.json:
+        print(palette.model_dump_json(indent=2))
+        return 0
+    print(f"{palette.format}  library {palette.library_version}  {palette.fingerprint[:12]}")
+    for item in palette.types:
+        count = len(palette.equipment_for(item.type_id))
+        source = f"{count} equipment" if item.provenance == "catalogue" else "engine type"
+        print(f"  {item.type_id:<22} {item.symbol.block:<22} {source}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pvsld",
@@ -659,6 +679,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     size.add_argument("--json", action="store_true", help="print the full result as JSON")
     size.set_defaults(run=_size)
+    palette = subcommands.add_parser(
+        "palette",
+        help="print the editor palette: placeable types, symbols and catalogue equipment",
+        description="List the types an editor may place (ENG-001); --json prints the full "
+        "document with symbol geometry, --schema its JSON Schema.",
+    )
+    palette_output = palette.add_mutually_exclusive_group()
+    palette_output.add_argument("--json", action="store_true", help="print the palette as JSON")
+    palette_output.add_argument(
+        "--schema", action="store_true", help="print the JSON Schema of the palette document"
+    )
+    palette.set_defaults(run=_palette)
     catalogue_cli.register(subcommands)
     symbols_cli.register(subcommands)
     sheet_cli.register(subcommands)
