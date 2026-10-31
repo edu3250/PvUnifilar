@@ -760,11 +760,22 @@ centre, meter, grid, electrode, junction, terminal, PV connector) carry no manuf
 `SymbolSpec`; `pvsld palette [--json | --schema]` prints it.
 **Tests**: `tests/test_palette.py` (round trip descriptor -> `SymbolSpec` for every type, ports,
 anchors, provenance, determinism, schema, CLI); `tests/test_import_footprint.py` covers the module.
-**Status**: In Progress
+**Status**: Complete
 **Out of scope**: the variable combiner box (ENG-004) and typed DC+/DC- ports (ENG-012, not approved).
 
-#### Stage 3.8.2: ENG-002 draft evaluation
-**Status**: Not Started
+#### Stage 3.8.2: ENG-002 draft evaluation (two PRs, owner 2026-10-30)
+**Goal**: `pvsld.core.draft.evaluate_draft` tells an editor what is wrong with a draft and which
+rules it could not run. `validate_pv_design` stays strict for the plugin.
+- **3.8.2a, classification:** every issue keeps rule id `GEN-001` and gets a category (`missing`,
+  `incompatible`, `invalid_structure`, `unsupported`), its path and the component ids it touches.
+  Rules not run are listed with the blocking sections. A missing value is never filled in. The
+  initial "unsupported" list (more than one inverter, inverter qty > 1, micro/central/optimizer
+  inverters, more than two strings, MPPT other than A/B, storage, MT service, transformer) is
+  resolved step by step (owner 2026-10-30).
+- **3.8.2b, partial evaluation:** each rule declares the sections it reads and runs as soon as they
+  are valid; string and voltage rules first (VOLT-001, STR-001, STR-004, STR-007).
+**Tests**: `tests/test_draft.py`; the import-footprint test covers the module.
+**Status**: In Progress (3.8.2a)
 
 #### Stage 3.8.3: ENG-005 manually fixed values
 **Status**: Not Started
