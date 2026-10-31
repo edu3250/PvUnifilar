@@ -790,10 +790,25 @@ split from the selection, so the plugin and the editor judge with the same code.
 an update; a bad locked value fails with `suggested` and is not updated; a locked value that
 passes gets a recommendation; no ezdxf at import.
 **Tests**: tests/test_choices.py; sizing tests unchanged after the split.
-**Status**: In Progress (PR open)
+**Status**: Complete (PR #55)
 
 #### Stage 3.8.4: ENG-004 DC protection box contents
-**Status**: Not Started
+**Goal**: `pvsld.sizing.dcbox.dc_box(spec)` sizes and assembles the DC protection box from the
+strings alone, so the editor places it ready-made and its parts can be replaced: per string the
+connector `CX-`, entry terminal `XE-`, gPV fuse `FUS-` (or DC breaker `DCB-` on request) and exit
+terminal `XS-`; shared, the DC SPD `DPS-CD1` and the switch `DCD-CD1` (4 poles in series for one
+string, 2 per string). Each part has its palette type, block, ports, poles, values,
+requirements, string membership and reason; the box also gives the links between ports, its
+protection-schedule rows and its `dc_bos` entries (`apply_dc_box`). Locked drawn values are kept.
+Owner answers 2026-10-30: the engine sizes the SPD (Type 2, U_CPV >= Voc max SPD-002, In >= 5 kA
+SPD-003, I_SCPV >= 1.25 x Isc SPD-004; no SPD in the catalogue yet, so U_CPV takes the usual
+commercial class and In the template's 20 kA, stated as assumptions); fuse by default, breaker
+on request; connectors and terminals included.
+**Success Criteria**: 1x5 -> 2x5 adds S2's parts and switches DCD-CD1 to 2 poles per string;
+removing the string gives back the 1x5 box; the applied spec validates; evaluate_choices finds
+nothing to update in a fresh box.
+**Tests**: tests/test_dcbox.py.
+**Status**: In Progress (PR open)
 
 #### Stage 3.8.5: ENG-003 topology mapping (1 inverter, up to 2 strings first)
 **Status**: Not Started
