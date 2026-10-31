@@ -46,6 +46,7 @@ protection box (DIS-001), aluminium conductors and multiple inverters.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from pvsld.catalogue import AcBreaker, Cable, DcBreaker, DcFuse, DcSwitch
 from pvsld.catalogue import PVModule as CatalogueModule
@@ -108,6 +109,168 @@ def string_ocpd_required(
     )
 
 
+@dataclass(frozen=True)
+class StringNeed:
+    """What the protection of one string must meet (the criteria of the module docstring)."""
+
+    minimum_a: float
+    """1.25 x 1.25 x Isc (690-8(b)(1) on the 690-8(a)(1) current)."""
+    maximum_a: float
+    """The module's maximum series fuse."""
+    voc_cold_v: float
+    """Voc of the string at the lowest temperature: the least rated voltage."""
+    fault_a: float
+    """Current the protection may have to interrupt: every string of the input."""
+
+
+def string_need(
+    *, max_series_fuse_a: float, isc_a: float, strings_per_input: int, voc_cold_string_v: float
+) -> StringNeed:
+    """The :class:`StringNeed` of a string of ``isc_a`` with ``strings_per_input`` on its input."""
+    return StringNeed(
+        minimum_a=calc.ocpd_min_a(calc.ISC_SAFETY_FACTOR * isc_a),
+        maximum_a=max_series_fuse_a,
+        voc_cold_v=voc_cold_string_v,
+        fault_a=strings_per_input * isc_a,
+    )
+
+
+def string_rating_problem(rating_a: float, need: StringNeed) -> str | None:
+    """Why ``rating_a`` cannot protect the string (NOM 690-8(b)(1), 690-9), or ``None``."""
+    if rating_a < need.minimum_a:
+        return f"{_g(rating_a)} A < {_n(need.minimum_a)} A (1.25 × 1.25 × Isc)"
+    if rating_a > need.maximum_a:
+        return f"{_g(rating_a)} A > {_g(need.maximum_a)} A (fusible máximo)"
+    return None
+
+
+def fuse_problem(fuse: DcFuse, need: StringNeed) -> str | None:
+    """Why the catalogue gPV ``fuse`` cannot protect the string, or ``None`` when it can."""
+    if (why := string_rating_problem(fuse.rated_current_a, need)) is not None:
+        return why
+    if fuse.rated_voltage_v < need.voc_cold_v:
+        return f"{_g(fuse.rated_voltage_v)} V < {_n(need.voc_cold_v)} V"
+    if fuse.breaking_capacity_ka * 1000 < need.fault_a:
+        return f"capacidad interruptiva {_g(fuse.breaking_capacity_ka)} kA < {_n(need.fault_a)} A"
+    return None
+
+
+def breaker_fit(breaker: DcBreaker, need: StringNeed) -> tuple[str | None, float, float]:
+    """``(why, ue_v, icu_ka)`` of a two-pole catalogue ``breaker`` on the string.
+
+    ``why`` is ``None`` when the breaker can protect it; ``ue_v`` is then the smallest rated
+    voltage at or above Voc(T_min) and ``icu_ka`` its breaking capacity there.
+    """
+    if (why := string_rating_problem(breaker.rated_current_a, need)) is not None:
+        return why, 0.0, 0.0
+    voltages = [v for v in breaker.ue_options_v(STRING_BREAKER_POLES) if v >= need.voc_cold_v]
+    if not voltages:
+        return (
+            f"sin tensión nominal >= {_n(need.voc_cold_v)} V en {STRING_BREAKER_POLES}P",
+            0.0,
+            0.0,
+        )
+    icu_ka = breaker.breaking_capacity_ka(STRING_BREAKER_POLES, need.voc_cold_v)
+    if icu_ka is None or icu_ka * 1000 < need.fault_a:
+        shown = "sin dato" if icu_ka is None else f"{_g(icu_ka)} kA"
+        return f"capacidad de ruptura {shown} < {_n(need.fault_a)} A de falla", 0.0, 0.0
+    return None, min(voltages), icu_ka
+
+
+def _need_of(
+    module: CatalogueModule, isc_a: float, strings_per_input: int, voc_cold_string_v: float
+) -> StringNeed:
+    return string_need(
+        max_series_fuse_a=module.max_series_fuse_a,
+        isc_a=isc_a,
+        strings_per_input=strings_per_input,
+        voc_cold_string_v=voc_cold_string_v,
+    )
+
+
+def _window_es(need: StringNeed) -> str:
+    return f"(>= {_n(need.minimum_a)} A, <= {_g(need.maximum_a)} A, >= {_n(need.voc_cold_v)} V)"
+
+
+def breaker_for(need: StringNeed, breakers: Sequence[DcBreaker], reason_es: str) -> DcOcpdChoice:
+    """The smallest catalogue breaker that meets ``need`` (a required protection).
+
+    ``device_id`` is ``None`` when none does; ``reason_es`` then explains each exclusion.
+    """
+    qualified: list[tuple[float, float, str, float]] = []
+    rejected: list[tuple[str, str]] = []
+    for breaker in sorted(breakers, key=lambda b: b.component_id):
+        why, ue_v, icu_ka = breaker_fit(breaker, need)
+        if why is None:
+            qualified.append((breaker.rated_current_a, ue_v, breaker.component_id, icu_ka))
+        else:
+            rejected.append((breaker.component_id, why))
+    if not qualified:
+        details = (
+            "; ".join(f"{name}: {why}" for name, why in rejected) or "catálogo sin interruptores"
+        )
+        return DcOcpdChoice(
+            required=True,
+            reason_es=(
+                f"{reason_es} Ningún interruptor de CD del catálogo cumple {_window_es(need)}: "
+                f"{details}."
+            ),
+            minimum_rating_a=need.minimum_a,
+            rejected=tuple(rejected),
+        )
+    rating, ue_v, name, icu_ka = min(qualified, key=lambda q: q[:3])
+    return DcOcpdChoice(
+        required=True,
+        reason_es=reason_es,
+        device_id=name,
+        rating_a=rating,
+        ue_v=ue_v,
+        poles=STRING_BREAKER_POLES,
+        icu_ka=icu_ka,
+        minimum_rating_a=need.minimum_a,
+        rejected=tuple(rejected),
+    )
+
+
+def fuse_for(need: StringNeed, fuses: Sequence[DcFuse], reason_es: str) -> DcOcpdChoice:
+    """The smallest catalogue gPV fuse that meets ``need`` (a required protection).
+
+    Like :func:`breaker_for`: ``device_id`` ``None`` with every exclusion when none does.
+    """
+    qualified: list[tuple[float, str, DcFuse]] = []
+    rejected: list[tuple[str, str]] = []
+    for fuse in sorted(fuses, key=lambda f: f.component_id):
+        why = fuse_problem(fuse, need)
+        if why is None:
+            qualified.append((fuse.rated_current_a, fuse.component_id, fuse))
+        else:
+            rejected.append((fuse.component_id, why))
+    if not qualified:
+        details = "; ".join(f"{name}: {why}" for name, why in rejected) or "catálogo sin fusibles"
+        return DcOcpdChoice(
+            required=True,
+            reason_es=(
+                f"{reason_es} Ningún fusible gPV del catálogo cumple {_window_es(need)}: {details}."
+            ),
+            device="fuse",
+            minimum_rating_a=need.minimum_a,
+            rejected=tuple(rejected),
+        )
+    rating, name, fuse = min(qualified, key=lambda q: q[:2])
+    return DcOcpdChoice(
+        required=True,
+        reason_es=reason_es,
+        device_id=name,
+        device="fuse",
+        rating_a=rating,
+        ue_v=fuse.rated_voltage_v,
+        poles=STRING_FUSE_POLES,
+        icu_ka=fuse.breaking_capacity_ka,
+        minimum_rating_a=need.minimum_a,
+        rejected=tuple(rejected),
+    )
+
+
 def select_string_breaker(
     *,
     module: CatalogueModule,
@@ -125,65 +288,8 @@ def select_string_breaker(
     """
     if not required:
         return DcOcpdChoice(required=False, reason_es=reason_es)
-    minimum_a = calc.ocpd_min_a(calc.ISC_SAFETY_FACTOR * isc_a)
-    maximum_a = module.max_series_fuse_a
-    fault_a = strings_per_input * isc_a
-    qualified: list[tuple[float, float, str, DcBreaker, float]] = []
-    rejected: list[tuple[str, str]] = []
-    for breaker in sorted(breakers, key=lambda b: b.component_id):
-        name = breaker.component_id
-        if breaker.rated_current_a < minimum_a:
-            rejected.append(
-                (name, f"{_g(breaker.rated_current_a)} A < {_n(minimum_a)} A (1.25 × 1.25 × Isc)")
-            )
-            continue
-        if breaker.rated_current_a > maximum_a:
-            rejected.append(
-                (name, f"{_g(breaker.rated_current_a)} A > {_g(maximum_a)} A (fusible máximo)")
-            )
-            continue
-        voltages = [v for v in breaker.ue_options_v(STRING_BREAKER_POLES) if v >= voc_cold_string_v]
-        if not voltages:
-            rejected.append(
-                (
-                    name,
-                    f"sin tensión nominal >= {_n(voc_cold_string_v)} V en {STRING_BREAKER_POLES}P",
-                )
-            )
-            continue
-        ue_v = min(voltages)
-        icu_ka = breaker.breaking_capacity_ka(STRING_BREAKER_POLES, voc_cold_string_v)
-        if icu_ka is None or icu_ka * 1000 < fault_a:
-            shown = "sin dato" if icu_ka is None else f"{_g(icu_ka)} kA"
-            rejected.append((name, f"capacidad de ruptura {shown} < {_n(fault_a)} A de falla"))
-            continue
-        qualified.append((breaker.rated_current_a, ue_v, name, breaker, icu_ka))
-    if not qualified:
-        details = (
-            "; ".join(f"{name}: {why}" for name, why in rejected) or "catálogo sin interruptores"
-        )
-        return DcOcpdChoice(
-            required=True,
-            reason_es=(
-                f"{reason_es} Ningún interruptor de CD del catálogo cumple "
-                f"(>= {_n(minimum_a)} A, <= {_g(maximum_a)} A, >= {_n(voc_cold_string_v)} V): "
-                f"{details}."
-            ),
-            minimum_rating_a=minimum_a,
-            rejected=tuple(rejected),
-        )
-    rating, ue_v, name, breaker, icu_ka = min(qualified, key=lambda q: q[:3])
-    return DcOcpdChoice(
-        required=True,
-        reason_es=reason_es,
-        device_id=name,
-        rating_a=rating,
-        ue_v=ue_v,
-        poles=STRING_BREAKER_POLES,
-        icu_ka=icu_ka,
-        minimum_rating_a=minimum_a,
-        rejected=tuple(rejected),
-    )
+    need = _need_of(module, isc_a, strings_per_input, voc_cold_string_v)
+    return breaker_for(need, breakers, reason_es)
 
 
 def select_string_fuse(
@@ -203,51 +309,8 @@ def select_string_fuse(
     """
     if not required:
         return DcOcpdChoice(required=False, reason_es=reason_es, device="fuse")
-    minimum_a = calc.ocpd_min_a(calc.ISC_SAFETY_FACTOR * isc_a)
-    maximum_a = module.max_series_fuse_a
-    fault_a = strings_per_input * isc_a
-    qualified: list[tuple[float, str, DcFuse]] = []
-    rejected: list[tuple[str, str]] = []
-    for fuse in sorted(fuses, key=lambda f: f.component_id):
-        name = fuse.component_id
-        if fuse.rated_current_a < minimum_a:
-            why = f"{_g(fuse.rated_current_a)} A < {_n(minimum_a)} A (1.25 × 1.25 × Isc)"
-        elif fuse.rated_current_a > maximum_a:
-            why = f"{_g(fuse.rated_current_a)} A > {_g(maximum_a)} A (fusible máximo)"
-        elif fuse.rated_voltage_v < voc_cold_string_v:
-            why = f"{_g(fuse.rated_voltage_v)} V < {_n(voc_cold_string_v)} V"
-        elif fuse.breaking_capacity_ka * 1000 < fault_a:
-            why = f"capacidad interruptiva {_g(fuse.breaking_capacity_ka)} kA < {_n(fault_a)} A"
-        else:
-            qualified.append((fuse.rated_current_a, name, fuse))
-            continue
-        rejected.append((name, why))
-    if not qualified:
-        details = "; ".join(f"{name}: {why}" for name, why in rejected) or "catálogo sin fusibles"
-        return DcOcpdChoice(
-            required=True,
-            reason_es=(
-                f"{reason_es} Ningún fusible gPV del catálogo cumple "
-                f"(>= {_n(minimum_a)} A, <= {_g(maximum_a)} A, >= {_n(voc_cold_string_v)} V): "
-                f"{details}."
-            ),
-            device="fuse",
-            minimum_rating_a=minimum_a,
-            rejected=tuple(rejected),
-        )
-    rating, name, fuse = min(qualified, key=lambda q: q[:2])
-    return DcOcpdChoice(
-        required=True,
-        reason_es=reason_es,
-        device_id=name,
-        device="fuse",
-        rating_a=rating,
-        ue_v=fuse.rated_voltage_v,
-        poles=STRING_FUSE_POLES,
-        icu_ka=fuse.breaking_capacity_ka,
-        minimum_rating_a=minimum_a,
-        rejected=tuple(rejected),
-    )
+    need = _need_of(module, isc_a, strings_per_input, voc_cold_string_v)
+    return fuse_for(need, fuses, reason_es)
 
 
 # --- Raceways (EMT) -----------------------------------------------------------------------------
@@ -374,6 +437,36 @@ def size_raceway(
 # --- Catalogue switchgear: AC breakers and the box disconnect ------------------------------------
 
 
+def ac_breaker_problem(
+    breaker: AcBreaker,
+    *,
+    rating_a: float,
+    poles: int,
+    voltage_v: float,
+    fault_ka: float,
+    exact: bool = False,
+) -> str | None:
+    """Why the catalogue AC ``breaker`` does not fit a position, or ``None`` when it does.
+
+    The position needs ``poles`` poles, a rated voltage of at least ``voltage_v``, ``rating_a``
+    (exactly with ``exact``, else at least) and an interrupting rating of ``fault_ka`` (NOM 110-9).
+    """
+    if breaker.poles != poles:
+        return f"{breaker.poles} polos; se requieren {poles}"
+    if breaker.voltage_v < voltage_v:
+        return f"{_g(breaker.voltage_v)} V < {_g(voltage_v)} V"
+    if exact and breaker.rated_current_a != rating_a:
+        return f"{_g(breaker.rated_current_a)} A; el servicio es de {_g(rating_a)} A"
+    if breaker.rated_current_a < rating_a:
+        return f"{_g(breaker.rated_current_a)} A < {_g(rating_a)} A"
+    if breaker.interrupting_ka < fault_ka:
+        return (
+            f"interrumpe {_g(breaker.interrupting_ka)} kA, menos que los {_g(fault_ka)} kA de "
+            "falla disponibles"
+        )
+    return None
+
+
 def select_ac_breaker(
     *,
     position: str,
@@ -387,17 +480,17 @@ def select_ac_breaker(
     """The catalogue breaker for ``position``: ``rating_a`` (or the next one up unless ``exact``),
     ``poles`` poles, rated for ``voltage_v`` and interrupting at least ``fault_ka`` (NOM 110-9).
     """
+
+    def problem(b: AcBreaker, fault: float) -> str | None:
+        return ac_breaker_problem(
+            b, rating_a=rating_a, poles=poles, voltage_v=voltage_v, fault_ka=fault, exact=exact
+        )
+
     fitting = sorted(
-        (
-            b
-            for b in breakers
-            if b.poles == poles
-            and b.voltage_v >= voltage_v
-            and (b.rated_current_a == rating_a if exact else b.rated_current_a >= rating_a)
-        ),
+        (b for b in breakers if problem(b, 0.0) is None),
         key=lambda b: (b.rated_current_a, -b.interrupting_ka, b.component_id),
     )
-    strong = [b for b in fitting if b.interrupting_ka >= fault_ka]
+    strong = [b for b in fitting if problem(b, fault_ka) is None]
     if strong:
         b = strong[0]
         return DeviceChoice(
@@ -421,6 +514,39 @@ def select_ac_breaker(
     ]
 
 
+def box_switch_poles_per_string(n_strings: int) -> int:
+    """Poles each string goes through: two, or four in series for a single string."""
+    return 4 if n_strings == 1 else 2
+
+
+def box_switch_rating(
+    switch: DcSwitch, n_strings: int, voc_cold_string_v: float
+) -> tuple[float, float] | None:
+    """``(ie_a, voltage step)`` of ``switch`` opening ``n_strings`` strings at Voc(T_min).
+
+    ``None`` when it has too few poles or no rating at that voltage.
+    """
+    per_string = box_switch_poles_per_string(n_strings)
+    if switch.poles < per_string * n_strings:
+        return None
+    return switch.rating_a(per_string, voc_cold_string_v)
+
+
+def box_switch_problem(
+    switch: DcSwitch, *, n_strings: int, voc_cold_string_v: float, string_i_max_a: float
+) -> str | None:
+    """Why the catalogue ``switch`` cannot be the box disconnect, or ``None`` when it can."""
+    per_string = box_switch_poles_per_string(n_strings)
+    if switch.poles < per_string * n_strings:
+        return f"{switch.poles} polos; se requieren {per_string * n_strings}"
+    rating = box_switch_rating(switch, n_strings, voc_cold_string_v)
+    if rating is None:
+        return f"sin capacidad a {_n(voc_cold_string_v)} V con {per_string} polos por cadena"
+    if rating[0] < string_i_max_a:
+        return f"{_g(rating[0])} A < {_n(string_i_max_a)} A a {_g(rating[1])} V"
+    return None
+
+
 def select_box_switch(
     *,
     position: str,
@@ -432,13 +558,16 @@ def select_box_switch(
     """The PV switch-disconnector of the box: every string through two poles (four in series for
     a single string), rated at Voc(T_min) for at least the string's maximum current (690-8(a)).
     """
-    poles_per_string = 4 if n_strings == 1 else 2
     candidates: list[tuple[float, str, DcSwitch, float]] = []
     for switch in sorted(switches, key=lambda s: s.component_id):
-        if switch.poles < poles_per_string * n_strings:
-            continue
-        rating = switch.rating_a(poles_per_string, voc_cold_string_v)
-        if rating is not None and rating[0] >= string_i_max_a:
+        problem = box_switch_problem(
+            switch,
+            n_strings=n_strings,
+            voc_cold_string_v=voc_cold_string_v,
+            string_i_max_a=string_i_max_a,
+        )
+        rating = box_switch_rating(switch, n_strings, voc_cold_string_v)
+        if problem is None and rating is not None:
             candidates.append((rating[0], switch.component_id, switch, rating[1]))
     if not candidates:
         return None, [
@@ -452,6 +581,7 @@ def select_box_switch(
             )
         ]
     ie_a, name, switch, step_v = min(candidates, key=lambda c: c[:2])
+    poles_per_string = box_switch_poles_per_string(n_strings)
     return DeviceChoice(
         position,
         name,

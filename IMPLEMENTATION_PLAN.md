@@ -778,7 +778,19 @@ rules it could not run. `validate_pv_design` stays strict for the plugin.
 **Status**: Complete (3.8.2a merged in PR #53; 3.8.2b adds `RuleDef.sections`, `calc.derive_strings`, `run_rules(only=...)` and the draft-side string reference check)
 
 #### Stage 3.8.3: ENG-005 manually fixed values
-**Status**: Not Started
+**Goal**: `pvsld.sizing.choices.evaluate_choices(spec, locks)` checks every drawn equipment value
+the engine can select (string fuses/breakers, the box switch, ITM-1, ITM-P, conductor sizes,
+raceways) without reselecting it, and returns checks, updates (unlocked values) and
+recommendations (locked values that pass, informational) as separate lists. A locked value that
+fails is a finding with the engine's value as `suggested`, never a replacement. Locks name a
+component (`FUS-S1`) or one value (`FUS-S1.ie_a`). The per-device checks of `sizing/bos.py` are
+split from the selection, so the plugin and the editor judge with the same code. Owner answers
+2026-10-30: both lock levels, recommendations informational, the sizing rule ids.
+**Success Criteria**: the engine's own design gives no update; a bad unlocked value fails and gets
+an update; a bad locked value fails with `suggested` and is not updated; a locked value that
+passes gets a recommendation; no ezdxf at import.
+**Tests**: tests/test_choices.py; sizing tests unchanged after the split.
+**Status**: In Progress (PR open)
 
 #### Stage 3.8.4: ENG-004 DC protection box contents
 **Status**: Not Started

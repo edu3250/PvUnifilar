@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `pvsld.sizing.choices.evaluate_choices`: checks the equipment values a user fixed by hand without reselecting them (ENG-005). It returns checks, updates for unlocked values and informational recommendations for locked values that pass, as separate lists; a locked value that fails is reported with the engine's value as a suggestion and is never replaced. Locks name a component (`FUS-S1`) or one value (`FUS-S1.ie_a`).
 - Partial draft evaluation (ENG-002, part b): the string and voltage rules (VOLT-001, STR-001, STR-004, STR-007) run on a draft as soon as the site, standards, modules, inverters and strings are valid, before the AC side exists. `RuleDef.sections` declares what each rule reads, `calc.derive_strings` computes the string values alone, and the draft checks the strings' module, inverter and MPPT references itself.
 - `pvsld.core.draft.evaluate_draft`: draft evaluation for the editor (ENG-002, part a). Each issue keeps `GEN-001` and adds a category (missing, incompatible, invalid structure, unsupported), its path and the affected component ids; rules that could not run are listed with the blocking sections. Missing values are never filled in.
 - `pvsld.palette` and `pvsld palette [--json | --schema]`: the editor palette (ENG-001). It lists the 15 types the engine calculates, each with full symbol geometry, ports, attributes and the JSON Schema of its spec section, plus the reviewed catalogue equipment with provenance. The junction gets four anchors at the centre of each edge.
 
 ### Changed
 
+- `pvsld.sizing.bos`: the check of each device (gPV fuse, DC breaker, box switch, AC breaker) is split from its selection (`fuse_problem`, `breaker_fit`, `box_switch_problem`, `ac_breaker_problem`, `fuse_for`, `breaker_for`), so sizing and `evaluate_choices` use the same criteria. Selections are unchanged.
 - `import pvsld.sizing` no longer loads ezdxf: the spec-file reader moved to `pvsld.specfile` (still re-exported by `pvsld.service`). This cuts about 3 s from an on-device start (Pyodide, ENG-014).
 
 ## [0.6.1] - 2026-10-13
