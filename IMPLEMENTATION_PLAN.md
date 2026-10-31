@@ -775,7 +775,7 @@ rules it could not run. `validate_pv_design` stays strict for the plugin.
 - **3.8.2b, partial evaluation:** each rule declares the sections it reads and runs as soon as they
   are valid; string and voltage rules first (VOLT-001, STR-001, STR-004, STR-007).
 **Tests**: `tests/test_draft.py`; the import-footprint test covers the module.
-**Status**: In Progress (3.8.2a)
+**Status**: Complete (3.8.2a merged in PR #53; 3.8.2b adds `RuleDef.sections`, `calc.derive_strings`, `run_rules(only=...)` and the draft-side string reference check)
 
 #### Stage 3.8.3: ENG-005 manually fixed values
 **Status**: Not Started

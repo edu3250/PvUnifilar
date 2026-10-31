@@ -11,6 +11,8 @@ from pvsld.core.validation import validate_pv_design
 from pvsld.resources import data_path
 
 ALL_RULES = tuple(rule.id for rule in RULES)
+STRING_RULES = ("VOLT-001", "STR-001", "STR-004", "STR-007")
+OTHER_RULES = tuple(r for r in ALL_RULES if r not in STRING_RULES)
 
 
 @pytest.fixture
@@ -34,15 +36,15 @@ def test_complete_spec_matches_strict_validation(spec: dict[str, Any]) -> None:
     assert report.not_evaluated == ()
 
 
-def test_missing_section_is_missing_and_blocks_every_rule(spec: dict[str, Any]) -> None:
+def test_missing_ac_section_still_runs_the_string_rules(spec: dict[str, Any]) -> None:
     del spec["grounding"]
     report = evaluate_draft(spec)
     issue = _only(report)
     assert (issue["category"], issue["path"]) == ("missing", "grounding")
     assert not report.complete
-    assert report.derived is None
-    assert report.findings == ()
-    assert tuple(n.rule_id for n in report.not_evaluated) == ALL_RULES
+    assert report.partial
+    assert report.evaluated == STRING_RULES
+    assert tuple(n.rule_id for n in report.not_evaluated) == OTHER_RULES
     assert all(n.blocking_paths == ("grounding",) for n in report.not_evaluated)
 
 
@@ -153,4 +155,71 @@ def test_report_is_plain_data(spec: dict[str, Any]) -> None:
     assert data["complete"] is False
     assert data["ok"] is False
     assert data["issues"][0]["category"] == "missing"
-    assert data["not_evaluated"][0]["rule_id"] == ALL_RULES[0]
+    assert data["not_evaluated"][0]["rule_id"] == OTHER_RULES[0]
+
+
+# --- Partial evaluation (Stage 3.8.2b) ---------------------------------------------------------
+
+
+def _strip_ac_side(spec: dict[str, Any]) -> None:
+    del spec["ac_bos"]
+    del spec["circuits"]
+
+
+def test_string_rules_run_before_the_ac_side_exists(spec: dict[str, Any]) -> None:
+    spec["strings"][0]["n_series"] = 30  # too many modules: VOLT-001 and STR-007 fail
+    strict = [f for f in validate_pv_design(spec).findings if f.rule_id in STRING_RULES]
+    _strip_ac_side(spec)
+    report = evaluate_draft(spec)
+    assert report.partial
+    assert report.evaluated == STRING_RULES
+    assert report.findings == tuple(strict)
+    assert {f.rule_id for f in report.findings} == {"VOLT-001", "STR-007"}
+    assert report.derived is not None
+    assert report.derived.circuits == ()
+    assert [s.string_id for s in report.derived.strings] == ["S1", "S2"]
+    assert tuple(n.rule_id for n in report.not_evaluated) == OTHER_RULES
+
+
+@pytest.mark.parametrize(
+    ("change", "blocking"),
+    [
+        (lambda s: s["project"]["site"].pop("t_min_c"), ("project.site",)),
+        (lambda s: s["modules"][0].pop("voc_v"), ("modules",)),
+        (lambda s: s.pop("standards"), ("standards",)),
+        (lambda s: s["inverters"][0].update(vdc_max_v=-1), ("inverters",)),
+    ],
+)
+def test_string_rules_wait_for_their_sections(spec: dict[str, Any], change, blocking) -> None:
+    _strip_ac_side(spec)
+    change(spec)
+    report = evaluate_draft(spec)
+    assert report.evaluated == ()
+    assert not report.partial
+    assert report.derived is None
+    assert report.findings == ()
+    waiting = {n.rule_id: n.blocking_paths for n in report.not_evaluated}
+    assert all(waiting[rule] == blocking for rule in STRING_RULES)
+
+
+def test_string_references_are_checked_on_a_draft(spec: dict[str, Any]) -> None:
+    _strip_ac_side(spec)
+    spec["strings"][1]["inverter"] = "INV9"
+    spec["strings"][0]["mppt"] = "Z"
+    report = evaluate_draft(spec)
+    references = report.issues_of("invalid_structure")
+    assert [(i.path, i.component_ids) for i in references] == [
+        ("strings[0]", ("S1",)),
+        ("strings[1]", ("S2",)),
+    ]
+    assert report.evaluated == ()
+    waiting = {n.rule_id: n.blocking_paths for n in report.not_evaluated}
+    assert waiting["VOLT-001"] == ("strings",)
+
+
+def test_partial_report_is_plain_data(spec: dict[str, Any]) -> None:
+    _strip_ac_side(spec)
+    data = evaluate_draft(spec).to_dict()
+    assert data["partial"] is True
+    assert data["evaluated"] == list(STRING_RULES)
+    assert data["complete"] is False

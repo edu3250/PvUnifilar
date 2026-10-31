@@ -13,10 +13,16 @@ A missing value is never replaced by zero or a default: whatever cannot be evalu
 ``not_evaluated`` with the reason. Every issue keeps the rule id ``GEN-001`` (the plugin already
 reads it) and adds its ``category``.
 
-Stage 3.8.2a evaluates the rule pack only when the whole specification parses; Stage 3.8.2b will run
-each rule as soon as the sections it reads are valid. The cross-reference check (a string naming an
-inverter that is not there) belongs to the root model, so Pydantic runs it only once every field
-parses: broken references show up after the other issues are fixed.
+When the whole specification parses, every rule runs, as in ``validate_pv_design``. When it does
+not (Stage 3.8.2b), each rule that declares the sections it reads (``RuleDef.sections``) runs as
+soon as those sections are valid and their references resolve. Today these are the string and
+voltage rules (VOLT-001, STR-001, STR-004, STR-007): they need ``project.site``, ``standards``,
+``modules``, ``inverters`` and ``strings``, but nothing of the AC side. ``derived`` then holds the
+string values only (``circuits`` is empty) and ``partial`` is true. The other rules wait for the
+whole spec.
+
+The cross-reference check of the root model runs only once every field parses, so on a draft the
+references the string rules need (module, inverter and MPPT of each string) are checked here.
 """
 
 from __future__ import annotations
@@ -26,13 +32,13 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pydantic import ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from pvsld.core import calc
 from pvsld.core.calc import Derived
-from pvsld.core.model import RULEPACK_ID, SCHEMA_VERSION, PvSystemSpec, parse_spec
+from pvsld.core.model import RULEPACK_ID, SCHEMA_VERSION, Project, PvSystemSpec, parse_spec
 from pvsld.core.policy import DEFAULT_DC_AC_POLICY, DcAcPolicy
-from pvsld.core.rules import RULES, Finding, Severity, run_rules
+from pvsld.core.rules import RULES, Finding, RuleDef, Severity, run_rules
 
 __all__ = [
     "Category",
@@ -117,6 +123,8 @@ class DraftReport:
     rulepack: str = RULEPACK_ID
     schema_version: str = SCHEMA_VERSION
     evaluated: tuple[str, ...] = field(default=())
+    partial: bool = False
+    """True when rules ran on valid sections of a spec that does not parse as a whole."""
 
     @property
     def complete(self) -> bool:
@@ -137,6 +145,7 @@ class DraftReport:
             "schema_version": self.schema_version,
             "issues": [i.to_dict() for i in self.issues],
             "findings": [f.to_dict() for f in self.findings],
+            "partial": self.partial,
             "evaluated": list(self.evaluated),
             "not_evaluated": [n.to_dict() for n in self.not_evaluated],
         }
@@ -329,12 +338,12 @@ def evaluate_draft(
             "La especificación debe ser un objeto con secciones; se recibió "
             f"{type(data).__name__}.",
         )
-        return _blocked((issue,))
+        return _partial({}, (issue,), dc_ac_policy)
     else:
         try:
             spec = parse_spec(data)
         except ValidationError as error:
-            return _blocked(tuple(_schema_issues(error, data)))
+            return _partial(data, tuple(_schema_issues(error, data)), dc_ac_policy)
     issues = tuple(_unsupported(spec))
     derived = calc.derive(spec)
     findings = tuple(run_rules(spec, derived, dc_ac_policy))
@@ -348,16 +357,121 @@ def evaluate_draft(
     )
 
 
-def _blocked(issues: tuple[DraftIssue, ...]) -> DraftReport:
-    blocking = _top_sections(issues)
+def _covers(section: str, path: str) -> bool:
+    return path == section or path.startswith((f"{section}.", f"{section}["))
+
+
+def _section_data(data: Mapping[str, Any], section: str) -> Any:
+    node: Any = data
+    for key in section.split("."):
+        if not isinstance(node, Mapping) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _section_type(section: str) -> Any:
+    model: type[BaseModel] = PvSystemSpec
+    annotation: Any = None
+    for key in section.split("."):
+        annotation = model.model_fields[key].annotation
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            model = annotation
+    return annotation
+
+
+def _valid_sections(
+    data: Mapping[str, Any], sections: Iterable[str], issues: Sequence[DraftIssue]
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """The validated value of each section, and the sections that are missing or have issues."""
+    valid: dict[str, Any] = {}
+    bad: list[str] = []
+    for section in sections:
+        raw = _section_data(data, section)
+        if raw is None or any(_covers(section, issue.path) for issue in issues):
+            bad.append(section)
+            continue
+        try:
+            valid[section] = TypeAdapter(_section_type(section)).validate_python(raw)
+        except ValidationError:
+            bad.append(section)
+    return valid, tuple(bad)
+
+
+def _string_references(valid: Mapping[str, Any]) -> list[DraftIssue]:
+    """The references the string rules follow; the root model checks them only on a full parse."""
+    modules = {m.id for m in valid["modules"]}
+    inverters = {i.id: i for i in valid["inverters"]}
+    issues = []
+    for index, string in enumerate(valid["strings"]):
+        problems = []
+        if string.module not in modules:
+            problems.append(f"usa el módulo «{string.module}», que no está en «modules»")
+        inverter = inverters.get(string.inverter)
+        if inverter is None:
+            problems.append(f"usa el inversor «{string.inverter}», que no está en «inverters»")
+        elif string.mppt not in {m.id for m in inverter.mppt}:
+            problems.append(f"usa el MPPT «{string.mppt}», que el inversor {inverter.id} no tiene")
+        issues += [
+            DraftIssue(
+                "invalid_structure",
+                f"strings[{index}]",
+                f"Referencia no válida: la cadena {string.id} {problem}.",
+                (string.id,),
+            )
+            for problem in problems
+        ]
+    return issues
+
+
+def _partial(
+    data: Mapping[str, Any], issues: tuple[DraftIssue, ...], policy: DcAcPolicy
+) -> DraftReport:
+    """Run each rule whose sections are valid; list the others with what blocks them."""
+    all_issues = list(issues)
+    findings: list[Finding] = []
+    evaluated: list[str] = []
+    not_evaluated: list[NotEvaluated] = []
+    derived: Derived | None = None
+    groups: dict[tuple[str, ...], list[RuleDef]] = {}
+    for rule in RULES:
+        groups.setdefault(rule.sections, []).append(rule)
+    for sections, rules in groups.items():
+        if not sections:
+            continue
+        valid, bad = _valid_sections(data, sections, issues)
+        if not bad:
+            references = _string_references(valid)
+            # A full parse already reported broken references through the root model.
+            if not any(issue.path == "(raíz)" for issue in issues):
+                all_issues += references
+            if references:
+                bad = ("strings",)
+        if bad:
+            reason = "No se evaluó: falta completar o corregir " + ", ".join(
+                f"«{section}»" for section in bad
+            )
+            not_evaluated += [NotEvaluated(r.id, reason + ".", bad) for r in rules]
+            continue
+        site = valid.pop("project.site")
+        spec = PvSystemSpec.model_construct(project=Project.model_construct(site=site), **valid)
+        derived = calc.derive_strings(spec)
+        ids = [rule.id for rule in rules]
+        findings += run_rules(spec, derived, policy, only=ids)
+        evaluated += ids
+    blocking = _top_sections(all_issues)
     reason = (
-        "No se evaluó: la especificación todavía no está completa; primero hay que corregir "
+        "No se evaluó: necesita la especificación completa; primero hay que corregir "
         + ", ".join(f"«{section}»" for section in blocking)
         + "."
     )
+    not_evaluated += [NotEvaluated(r.id, reason, blocking) for r in groups.get((), [])]
+    order = {rule.id: index for index, rule in enumerate(RULES)}
     return DraftReport(
-        issues=issues,
-        findings=(),
-        not_evaluated=tuple(NotEvaluated(rule.id, reason, blocking) for rule in RULES),
-        derived=None,
+        issues=tuple(all_issues),
+        findings=tuple(findings),
+        not_evaluated=tuple(sorted(not_evaluated, key=lambda n: order[n.rule_id])),
+        derived=derived,
+        evaluated=tuple(sorted(evaluated, key=order.__getitem__)),
+        partial=bool(evaluated),
     )

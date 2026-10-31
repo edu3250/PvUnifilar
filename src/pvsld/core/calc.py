@@ -479,6 +479,25 @@ def _circuit_values(
     return tuple(values)
 
 
+def derive_strings(spec: PvSystemSpec) -> Derived:
+    """The string part of :func:`derive` alone, for a draft whose AC side is not there yet.
+
+    Reads only ``project.site``, ``standards``, ``modules``, ``inverters`` and ``strings``;
+    ``circuits`` stays empty, so only rules that read the strings may run on the result.
+    """
+    strings = _string_values(spec)
+    kwp = sum(s.p_stc_w for s in strings) / 1000
+    kwac = sum(i.pac_w * i.qty for i in spec.inverters) / 1000
+    return Derived(
+        kwp_total=kwp,
+        kwac_total=kwac,
+        dc_ac_ratio=kwp / kwac,
+        t_cell_max_c=t_cell_max_c(spec.project.site.t_amb_max_c),
+        strings=strings,
+        circuits=(),
+    )
+
+
 def derive(spec: PvSystemSpec) -> Derived:
     """Compute every derived value of ``spec`` (see the vault note PV SLD Parameter Model)."""
     tables = get_tables(spec.standards.nom_edition)
