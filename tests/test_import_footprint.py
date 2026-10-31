@@ -18,6 +18,7 @@ CORE = (
     "pvsld.symbols.cfe",
     "pvsld.specfile",
     "pvsld.palette",
+    "pvsld.core.draft",
 )
 HEAVY = ("ezdxf", "matplotlib", "reportlab", "openpyxl", "mcp", "PIL", "anyio")
 
