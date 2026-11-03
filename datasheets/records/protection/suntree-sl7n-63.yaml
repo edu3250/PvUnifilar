@@ -5,14 +5,14 @@ manufacturer: Suntree
 range_name: SL7N-63 DC circuit breaker
 frame_current_a: 63
 pole_options:                       # rated service voltage Ue (DC) per pole count, chosen at design time
-  - {poles: 1, ue_v_options: [15, 60, 100, 180, 250]}
-  - {poles: 2, ue_v_options: [125, 375, 550, 600, 800]}
-  - {poles: 3, ue_v_options: [750, 800]}
-  - {poles: 4, ue_v_options: [800, 1000, 1200]}
-breaking_capacity_dc:               # Ics = Icu
-  - {poles: 2, voltage_v: 800, icu_ka: 6.0}
-  - {poles: 4, voltage_v: 1200, icu_ka: 6.0}
-  - {poles: null, voltage_v: null, icu_ka: 2.0}   # "Ics=Icu=2KA" for the other configurations (ambiguous on the datasheet)
+  - {poles: 1, ue_v_options: [15, 24, 48, 60, 100, 180, 250]}
+  - {poles: 2, ue_v_options: [24, 48, 125, 375, 500, 550, 600, 800]}
+  - {poles: 3, ue_v_options: [750, 900]}
+  - {poles: 4, ue_v_options: [1000, 1200]}
+breaking_capacity_dc:               # Ics = Icu: "6kA (2P 800V 4P1200V) 2kA"
+  - {poles: 2, voltage_v: 800, icu_ka: 2.0}
+  - {poles: 4, voltage_v: 1200, icu_ka: 2.0}
+  - {poles: null, voltage_v: null, icu_ka: 6.0}   # every other configuration
 ics_pct_of_icu: 100
 trip_curves: [B, C]
 magnetic_trip: 10 x In               # marking "Ii=10In" on the product images
@@ -20,11 +20,11 @@ insulation_voltage_v: 1250
 impulse_withstand_kv: 6
 overvoltage_category: III
 pollution_degree: 3
-standards: [IEC 60947-2, GB/T 14048.2]
-certifications: [CB, CE]             # marks shown; a third mark is not legible
+standards: [IEC 60947-2, GB/T 14048.2-2020]
+certifications: [CE, IEC, CB, TUV]
 ip_rating: IP40 body, IP20 terminals
-mechanical_life_ops: 8500
-electrical_life_ops: {"<125 V 1P / <250 V 2P": 1500, other: 1000}
+mechanical_life_ops: 20000
+electrical_life_ops: {"<=125 V 1P / <=250 V 2P": 10000, other: 1500}
 operating_temp_c: [-30, 70]
 storage_temp_c: [-40, 85]
 altitude_m: 2000
@@ -45,17 +45,23 @@ variants:
   - {component_id: SUNTREE-SL7N-63-50A, rated_current_a: 50}
   - {component_id: SUNTREE-SL7N-63-63A, rated_current_a: 63}
 source:
-  filename: DC-MCB-SL7N-63.pdf
-  sha256: 2695d068dcc4683853d37c58b7be253320252e507ed095721a4c7d0571d2a699
-  title: Suntree DC Circuit Breaker SL7N-63 (brochure)
-  pages: [3]
+  filename: 01_INT-SUT-2P-32A-Black_Ficha_Tecnica.pdf
+  sha256: 11a3c471cefdba63cc44f1cfb0a4c16dffd083049677f53980510f4432eff53d
+  title: Suntree SL7N-63 DC circuit breaker, catalogue pages 17-22 (distributor sheet INT-SUT-2P-32A-Black)
+  pages: [1, 2, 3]
   extraction_method: rendered_page
   extraction_date: 2026-10-07
   reviewed_by: edu3250
-  review_date: 2026-10-07
+  review_date: 2026-11-03
   notes: >-
-    No text layer; pages rendered with pypdfium2. Ue per pole count is a list of options, so the pole/voltage
-    configuration is chosen at design time (e.g. 2P 550 V or 2P 800 V). Product images also show "2P 550V" and "4P 1000V"
-    labels. The breaking capacity row is ambiguous outside 2P 800 V / 4P 1200 V (2 kA assumed conservatively); confirm with
-    the manufacturer. The 2 kA fallback is kept (owner accepted it 2026-10-07): it matters mainly for battery circuits, since PV string fault currents are far below it. The model-code example (S S7N 63/1-10 OF) differs from the "SL7N-63" marking. The instantaneous
-    trip "10 x In" comes from a marking on the product images.
+    Updated 2026-11-03 from the newer catalogue pages the owner provided (the distributor's sheet for the 2P 32 A
+    version, Suntree pages 17-22); the first record (2026-10-07) came from the brochure DC-MCB-SL7N-63.pdf (sha256
+    2695d068dcc4683853d37c58b7be253320252e507ed095721a4c7d0571d2a699). Values read from the rendered pages. The newer
+    sheet changes: Ue options per pole count (adds 24/48 V on 1P and 2P, 500 V on 2P; 3P is 750/900 V; 4P is
+    1000/1200 V), mechanical life 20000 and electrical life 10000 (<=DC125V/1P, <=DC250V/2P) or 1500, certificates
+    CE, IEC, CB, TUV. Breaking capacity "Ics = Icu = 6kA (2P 800V 4P1200V) 2kA" is read as 6 kA, except 2 kA at
+    2P 800 V and 4P 1200 V: the earlier record had it the other way round; the lower value at the highest voltages is
+    the physically consistent reading. PV string fault currents are far below 2 kA, so no PV design changes. The
+    standards row prints "IEC 60749-2", a misprint of IEC 60947-2 (the tripping curves cite IEC/EN 60947-2). The
+    instantaneous trip "10 x In" comes from a marking on the product images of the first brochure; the newer sheet
+    gives B curve 3-5 In and C curve 5-10 In. Order example: "SL7N-63 2P DC550V 32A".

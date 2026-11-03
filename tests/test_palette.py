@@ -20,7 +20,6 @@ from pvsld.symbols.cfe import get_symbol
 from pvsld.symbols.cfe.model import LIBRARY_VERSION
 
 ENGINE_TYPES = {
-    "dc_spd",
     "interconnection_point",
     "load_centre",
     "meter",

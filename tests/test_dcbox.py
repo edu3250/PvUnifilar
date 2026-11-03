@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from pvsld.catalogue import ComponentRegistry
+from pvsld.catalogue.registry import load_records
 from pvsld.core.validation import validate_pv_design
 from pvsld.resources import data_path
 from pvsld.sizing import size_pv_system
@@ -25,6 +26,10 @@ def registry() -> ComponentRegistry:
 def sized(registry: ComponentRegistry) -> dict[str, Any]:
     request = load_request(Path(data_path("examples/sizing_jinko_growatt.yaml")))
     return size_pv_system(request, registry).candidates[0].spec
+
+
+def registry_records():
+    return load_records(data_path("datasheets/records"))
 
 
 def _two(sized: dict[str, Any]) -> dict[str, Any]:
@@ -122,17 +127,31 @@ def test_breaker_on_request(sized, registry) -> None:
     assert box.rows[0][1] == "ITM de CD (cadena)"
 
 
-def test_spd_is_sized_from_the_strings(sized, registry) -> None:
+def test_spd_comes_from_the_catalogue(sized, registry) -> None:
     box = dc_box(_two(sized), registry=registry)
     spd = box.child(SPD_ID)
     needs = spd.requirements
-    assert spd.values["spd_type"] == "T2"
+    # Voc(T_min) 269 V: the certified 300 V version without remote signalling
+    assert spd.model == "CLAMPER-SOLAR-300V-18KA"
+    assert spd.values == {"spd_type": "T2", "ucpv_v": 300.0, "in_ka": 18.0, "iscpv_a": 5000.0}
     assert spd.values["ucpv_v"] >= needs["ucpv_min_v"]
-    assert spd.values["in_ka"] >= needs["in_min_ka"] == 5
+    assert needs["in_min_ka"] == 5
     assert needs["iscpv_min_a"] == pytest.approx(2 * 1.25 * 18.17, abs=0.1)
-    assert spd.model is None
-    assert any("DPS" in a for a in box.assumptions)
+    assert box.assumptions == ()
     assert spd.ports == ("L1", "L2", "PE")
+    assert box.spds[0]["model"] == "CLAMPER-SOLAR-300V-18KA"
+
+
+def test_spd_without_a_catalogue_match_is_an_assumption(sized, registry) -> None:
+    empty = ComponentRegistry.from_records(
+        [r for r in registry_records() if r.family.component_type != "dc_spd"]
+    )
+    box = dc_box(_two(sized), registry=empty)
+    spd = box.child(SPD_ID)
+    assert spd.model is None
+    assert spd.values["ucpv_v"] == 600.0
+    assert spd.values["in_ka"] == 20.0
+    assert any("ningún DPS del catálogo" in a for a in box.assumptions)
 
 
 def test_locked_replacement_is_kept(sized, registry) -> None:

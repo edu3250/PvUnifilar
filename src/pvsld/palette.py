@@ -362,6 +362,7 @@ TYPES: tuple[_TypeDef, ...] = (
         "dc_spd",
         "Protección contra sobretensiones de CD",
         "PVSLD_SPD",
+        component_types=("dc_spd",),
         spec_section="dc_bos.spds[]",
         spec_model_name="Spd",
     ),

@@ -19,9 +19,10 @@ Shared by the strings:
 * ``DPS-CD1``, the DC surge protective device (owner 2026-10-30: the engine sizes it). Type 2
   (no external lightning protection assumed), U_CPV >= Voc(T_min) of the strings (SPD-002),
   I_n >= 5 kA (SPD-003) and I_SCPV >= 1.25 x the strings' Isc (SPD-004), vault rules after
-  IEC 60364-7-712. The catalogue has no SPD yet, so no model is chosen: U_CPV is the first of
-  the usual commercial classes (:data:`SPD_UCPV_CLASSES_V`) at or above the minimum and I_n the
-  20 kA of the owner's template; both are assumptions until a model is chosen.
+  IEC 60364-7-712. The catalogue SPD is :func:`pvsld.sizing.bos.spd_for` (certified versions
+  first, then without remote signalling, then the lowest U_CPV). When none fits, U_CPV is the
+  first of the usual commercial classes (:data:`SPD_UCPV_CLASSES_V`) at or above the minimum and
+  I_n the 20 kA of the owner's template, and the box states both as assumptions.
 * ``DCD-CD1``, the ganged PV switch-disconnector: two poles per string, four in series for a
   single string (690-15(d) and the manufacturer's wiring), rated at Voc(T_min) for 1.25 x Isc.
 
@@ -51,8 +52,7 @@ from pvsld.symbols.cfe.definitions import dc_disconnect_name
 
 SPD_ID = "DPS-CD1"
 SPD_TYPE = "T2"
-SPD_IN_MIN_KA = 5.0
-"""SPD-003: a Class II (Type 2) SPD discharges at least 5 kA."""
+SPD_IN_MIN_KA = bos.SPD_IN_MIN_KA
 SPD_IN_KA = 20.0
 """Nominal discharge current of the owner's template; an assumption until a model is chosen."""
 SPD_UCPV_CLASSES_V = (600.0, 800.0, 1000.0, 1200.0, 1500.0)
@@ -215,19 +215,36 @@ def _protection(
     return bos.breaker_for(need, registry.dc_breakers(), reason)
 
 
-def _spd_values(voc_v: float, isc_total_a: float) -> tuple[dict[str, Any], dict[str, Any]]:
-    ucpv_min = voc_v
-    ucpv = next((v for v in SPD_UCPV_CLASSES_V if v >= ucpv_min), None)
-    iscpv_min = calc.ISC_SAFETY_FACTOR * isc_total_a
-    values: dict[str, Any] = {"spd_type": SPD_TYPE, "in_ka": SPD_IN_KA}
+def _spd_values(
+    voc_v: float, isc_total_a: float, registry: ComponentRegistry
+) -> tuple[dict[str, Any], dict[str, Any], str | None]:
+    """The SPD's spec values, its requirements, and the assumption made when none fits."""
+    need = bos.spd_need(voc_v, isc_total_a)
+    requirements = {
+        "ucpv_min_v": round(need.ucpv_min_v, 1),
+        "in_min_ka": need.in_min_ka,
+        "iscpv_min_a": round(need.iscpv_min_a, 2),
+    }
+    spd = bos.spd_for(need, registry.dc_spds())
+    if spd is not None:
+        values: dict[str, Any] = {
+            "spd_type": spd.spd_type,
+            "ucpv_v": spd.ucpv_v,
+            "in_ka": spd.in_ka,
+            "iscpv_a": spd.iscpv_ka * 1000,
+            "model": spd.component_id,
+        }
+        return values, requirements, None
+    values = {"spd_type": SPD_TYPE, "in_ka": SPD_IN_KA}
+    ucpv = next((v for v in SPD_UCPV_CLASSES_V if v >= need.ucpv_min_v), None)
     if ucpv is not None:
         values["ucpv_v"] = ucpv
-    requirements = {
-        "ucpv_min_v": round(ucpv_min, 1),
-        "in_min_ka": SPD_IN_MIN_KA,
-        "iscpv_min_a": round(iscpv_min, 2),
-    }
-    return values, requirements
+    assumption = (
+        f"{SPD_ID}: ningún DPS del catálogo cumple; tipo 2 (sin pararrayos externo), U_CPV de la "
+        f"primera clase comercial usual de al menos {_n(voc_v)} V e In {_g(SPD_IN_KA)} kA, "
+        "confirme con el modelo."
+    )
+    return values, requirements, assumption
 
 
 def dc_box(
@@ -388,15 +405,18 @@ def dc_box(
     voc = max(s.voc_max_string_v for s in strings)
     i_max = max(calc.ISC_SAFETY_FACTOR * s.isc_a for s in strings)
 
-    spd_values, spd_needs = _spd_values(voc, sum(s.isc_a for s in strings))
-    spd_values, spd_kept = lock.keep(SPD_ID, spd_values)
-    assumptions.append(
-        f"{SPD_ID}: tipo 2 (sin pararrayos externo), U_CPV de la primera clase comercial usual "
-        f"de al menos {_n(voc)} V e In {_g(SPD_IN_KA)} kA; el catálogo no tiene DPS, "
-        "confirme con el modelo."
+    spd_values, spd_needs, spd_assumption = _spd_values(
+        voc, sum(s.isc_a for s in strings), registry
     )
+    spd_values, spd_kept = lock.keep(SPD_ID, spd_values)
+    if spd_assumption is not None:
+        assumptions.append(spd_assumption)
     inverter_id = strings[0].inverter_id
-    spd_entry = {"id": SPD_ID, "at": f"{inverter_id}.dc", **spd_values}
+    spd_entry = {
+        "id": SPD_ID,
+        "at": f"{inverter_id}.dc",
+        **{k: v for k, v in spd_values.items() if v is not None},
+    }
     children.append(
         BoxChild(
             SPD_ID,

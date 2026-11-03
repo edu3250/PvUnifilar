@@ -48,7 +48,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from pvsld.catalogue import AcBreaker, Cable, DcBreaker, DcFuse, DcSwitch
+from pvsld.catalogue import AcBreaker, Cable, DcBreaker, DcFuse, DcSpd, DcSwitch
 from pvsld.catalogue import PVModule as CatalogueModule
 from pvsld.core import calc
 from pvsld.core.severity import Severity
@@ -580,16 +580,69 @@ def select_box_switch(
                 subject=position,
             )
         ]
-    ie_a, name, switch, step_v = min(candidates, key=lambda c: c[:2])
+    # The smallest rating wins; on a tie, a switch whose datasheet publishes its utilization
+    # category (IEC 60947-3) before one that does not, then the id.
+    ie_a, name, switch, step_v = min(
+        candidates, key=lambda c: (c[0], c[2].utilization_category is None, c[1])
+    )
     poles_per_string = box_switch_poles_per_string(n_strings)
     return DeviceChoice(
         position,
         name,
         ie_a,
         step_v,
-        note_es=f"{poles_per_string} polos por cadena, {switch.utilization_category}",
+        note_es=f"{poles_per_string} polos por cadena, "
+        + (switch.utilization_category or "categoría de uso no publicada por el fabricante"),
         poles=switch.poles,  # the switch uses all of its poles (four in series for one string)
     ), []
+
+
+# --- DC surge protective device -------------------------------------------------------------
+
+SPD_IN_MIN_KA = 5.0
+"""SPD-003: a Class II (Type 2) SPD discharges at least 5 kA."""
+
+
+@dataclass(frozen=True)
+class SpdNeed:
+    """What the DC SPD of the box must meet (vault rules SPD-002 to SPD-004, IEC 60364-7-712)."""
+
+    ucpv_min_v: float
+    """SPD-002: U_CPV >= Voc(T_min) of the strings."""
+    in_min_ka: float
+    """SPD-003: I_n >= 5 kA (Class II)."""
+    iscpv_min_a: float
+    """SPD-004: I_SCPV >= 1.25 x the Isc of the strings it protects."""
+
+
+def spd_need(voc_cold_v: float, isc_total_a: float) -> SpdNeed:
+    """The :class:`SpdNeed` of strings of ``voc_cold_v`` with ``isc_total_a`` together."""
+    return SpdNeed(voc_cold_v, SPD_IN_MIN_KA, calc.ISC_SAFETY_FACTOR * isc_total_a)
+
+
+def spd_problem(spd: DcSpd, need: SpdNeed) -> str | None:
+    """Why the catalogue ``spd`` cannot protect the strings, or ``None`` when it can."""
+    if spd.spd_class == "I":
+        return "clase I; la caja lleva un DPS clase II (tipo 2)"
+    if spd.ucpv_v < need.ucpv_min_v:
+        return f"U_CPV {_g(spd.ucpv_v)} V < {_n(need.ucpv_min_v)} V (SPD-002)"
+    if spd.in_ka < need.in_min_ka:
+        return f"In {_g(spd.in_ka)} kA < {_g(need.in_min_ka)} kA (SPD-003)"
+    if spd.iscpv_ka * 1000 < need.iscpv_min_a:
+        return f"I_SCPV {_g(spd.iscpv_ka)} kA < {_n(need.iscpv_min_a)} A (SPD-004)"
+    return None
+
+
+def spd_for(need: SpdNeed, spds: Sequence[DcSpd]) -> DcSpd | None:
+    """The catalogue DC SPD for ``need``: certified versions first, then without remote
+    signalling, then the lowest U_CPV and the highest I_n. ``None`` when none qualifies."""
+    fitting = [s for s in spds if spd_problem(s, need) is None]
+    if not fitting:
+        return None
+    return min(
+        fitting,
+        key=lambda s: (not s.certified, s.remote_signalling, s.ucpv_v, -s.in_ka, s.component_id),
+    )
 
 
 # --- Inverter-output OCPD ----------------------------------------------------------------------

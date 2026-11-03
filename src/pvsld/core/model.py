@@ -242,6 +242,9 @@ class Spd(_Strict):
     uc_v: PositiveFloat | None = None
     in_ka: PositiveFloat
     iscpv_a: PositiveFloat | None = None
+    model: str | None = Field(
+        default=None, description="Catalogue reference of the device (component_id)"
+    )
 
 
 class DcBos(_Strict):
