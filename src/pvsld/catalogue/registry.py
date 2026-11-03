@@ -32,6 +32,8 @@ from pvsld.catalogue.protection import (
     DcBreaker,
     DcFuse,
     DcFuseFamily,
+    DcSpd,
+    DcSpdFamily,
     DcSwitch,
     DcSwitchFamily,
     ProtectionFamily,
@@ -45,8 +47,9 @@ Family = (
     | CableFamily
     | AcBreakerFamily
     | DcSwitchFamily
+    | DcSpdFamily
 )
-Component = PVModule | Inverter | DcBreaker | DcFuse | Cable | AcBreaker | DcSwitch
+Component = PVModule | Inverter | DcBreaker | DcFuse | Cable | AcBreaker | DcSwitch | DcSpd
 
 # ``datasheets/records/<folder>/<family-id lowercase>.yaml``
 RECORD_FOLDERS: dict[str, str] = {
@@ -57,6 +60,7 @@ RECORD_FOLDERS: dict[str, str] = {
     "dc_fuse": "protection",
     "ac_breaker": "protection",
     "dc_switch": "protection",
+    "dc_spd": "protection",
     "conductor": "conductors",
 }
 
@@ -287,6 +291,10 @@ class ComponentRegistry:
     def dc_switches(self) -> list[DcSwitch]:
         """Every PV switch-disconnector, sorted by id."""
         return [c for c in self if isinstance(c, DcSwitch)]
+
+    def dc_spds(self) -> list[DcSpd]:
+        """Every PV surge protective device, sorted by id."""
+        return [c for c in self if isinstance(c, DcSpd)]
 
     def cables(self) -> list[Cable]:
         """Every cable size, sorted by id."""
