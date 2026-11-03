@@ -479,9 +479,17 @@ class DcSwitchSpec(Strict):
     manufacturer: str = Field(min_length=1)
     range_name: str = Field(min_length=1)
     poles: PositiveInt
-    utilization_category: str = Field(min_length=1)
-    insulation_voltage_v: PositiveFloat
-    standards: list[str] = Field(min_length=1)
+    utilization_category: str | None = Field(
+        default=None,
+        min_length=1,
+        description="IEC 60947-3 category, e.g. DC-PV2; None when not published",
+    )
+    insulation_voltage_v: PositiveFloat | None = Field(
+        default=None, description="Ui; None when the manufacturer does not publish it"
+    )
+    standards: list[str] | None = Field(
+        default=None, min_length=1, description="None when the manufacturer does not publish them"
+    )
     certifications: list[str] | None = None
     ip_rating: str | None = None
     short_time_withstand: str | None = None

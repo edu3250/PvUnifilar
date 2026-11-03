@@ -580,14 +580,19 @@ def select_box_switch(
                 subject=position,
             )
         ]
-    ie_a, name, switch, step_v = min(candidates, key=lambda c: c[:2])
+    # The smallest rating wins; on a tie, a switch whose datasheet publishes its utilization
+    # category (IEC 60947-3) before one that does not, then the id.
+    ie_a, name, switch, step_v = min(
+        candidates, key=lambda c: (c[0], c[2].utilization_category is None, c[1])
+    )
     poles_per_string = box_switch_poles_per_string(n_strings)
     return DeviceChoice(
         position,
         name,
         ie_a,
         step_v,
-        note_es=f"{poles_per_string} polos por cadena, {switch.utilization_category}",
+        note_es=f"{poles_per_string} polos por cadena, "
+        + (switch.utilization_category or "categoría de uso no publicada por el fabricante"),
         poles=switch.poles,  # the switch uses all of its poles (four in series for one string)
     ), []
 
