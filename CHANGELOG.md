@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-03
+
 ### Added
 
 - `GraphResult.circuits`: the cables of the drawing that make up each circuit, in path order (ENG-003c). `GraphCable.raceway_trade_size_mm`: the user can draw the EMT size of a circuit; it is kept and checked (CON-006). Different sizes on the strings' shared DC raceway give a `conflict` issue and the largest size.

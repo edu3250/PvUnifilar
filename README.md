@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/edu3250/PvUnifilar/actions/workflows/ci.yml"><img src="https://github.com/edu3250/PvUnifilar/actions/workflows/ci.yml/badge.svg?branch=develop" alt="CI"></a>
-  <img src="https://img.shields.io/badge/versi%C3%B3n-v0.7.0-blue" alt="Versión v0.7.0">
+  <img src="https://img.shields.io/badge/versi%C3%B3n-v0.7.1-blue" alt="Versión v0.7.1">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue" alt="Python 3.11 | 3.12">
   <img src="https://img.shields.io/badge/MCP-servidor%20stdio-8A2BE2" alt="Servidor MCP stdio">
   <img src="https://img.shields.io/badge/Claude%20Code-plugin-D97757" alt="Plugin de Claude Code">
@@ -162,7 +162,7 @@ Lado CA:
 **3. Primer arranque.** La primera vez, uv descarga unos 60 MB de dependencias (de 15 segundos a un minuto), y eso puede tardar más que los 30 segundos que Claude Code espera a un servidor. Si `/mcp` muestra `pvsld` como fallido, reconéctalo ahí cuando termine la descarga, o descárgalo antes desde una terminal:
 
 ```bash
-uvx --from pvsld==0.7.0 pvsld-mcp --version
+uvx --from pvsld==0.7.1 pvsld-mcp --version
 ```
 
 **4. Usarlo.** Pídelo con tus palabras, o usa los comandos:
@@ -208,7 +208,7 @@ El plugin es una capa delgada sobre un **servidor MCP stdio** estándar, `pvsld-
 <summary><b>Claude Code</b>, sin el plugin</summary>
 
 ```bash
-claude mcp add pvsld -- uvx --from pvsld==0.7.0 pvsld-mcp
+claude mcp add pvsld -- uvx --from pvsld==0.7.1 pvsld-mcp
 ```
 
 o en el `.mcp.json` de un proyecto:
@@ -218,7 +218,7 @@ o en el `.mcp.json` de un proyecto:
   "mcpServers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.7.0", "pvsld-mcp"],
+      "args": ["--from", "pvsld==0.7.1", "pvsld-mcp"],
       "env": { "PVSLD_OUTPUT_DIR": "out" }
     }
   }
@@ -237,7 +237,7 @@ Agrega el mismo servidor a `claude_desktop_config.json` (Settings → Developer 
   "mcpServers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.7.0", "pvsld-mcp"],
+      "args": ["--from", "pvsld==0.7.1", "pvsld-mcp"],
       "env": { "PVSLD_OUTPUT_DIR": "C:\\Users\\tu_usuario\\Documents\\unifilares" }
     }
   }
@@ -256,7 +256,7 @@ En `.vscode/mcp.json` la clave principal es `servers`:
   "servers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.7.0", "pvsld-mcp"]
+      "args": ["--from", "pvsld==0.7.1", "pvsld-mcp"]
     }
   }
 }
@@ -379,6 +379,7 @@ pvsld design examples/quick_request.yaml -o out/demo --no-autocad
 
 | Versión | Contenido |
 |---|---|
+| `v0.7.1` | Nombres de los equipos y valores derivados de las conexiones en la paleta; cables de cada circuito y tubería dibujada en el editor |
 | `v0.7.0` | Motor para el editor PvUnifilar: paleta de símbolos, revisión de borradores, valores fijados a mano, caja de protecciones CD armada, del dibujo a la especificación y matriz de capacidades; DPS CLAMPER Solar y seccionadores Connera en el catálogo |
 | `v0.6.1` | El aviso de borrador viaja en cada respuesta del servidor; guía para Copilot CLI y Antigravity CLI |
 | `v0.6.0` | El servidor se publica en PyPI (`pvsld`); el plugin se instala también en Copilot CLI y Antigravity CLI; los flujos se sirven además como prompts MCP |

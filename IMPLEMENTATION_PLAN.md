@@ -849,7 +849,7 @@ appears in `filled` as before. Owner answers 2026-11-03: no raceway type yet (th
 calculates EMT only); when the strings' cables give different sizes for their shared DC raceway,
 a `conflict` issue and the largest size.
 **Tests**: tests/test_graph.py.
-**Status**: In Progress (PR open)
+**Status**: Complete (PR #62)
 
 ---
 
