@@ -14,14 +14,11 @@ without ``overwrite``) raise.
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from pvsld.backends.dxf import write_dxf
 from pvsld.backends.readback import ReadBackReport, verify
@@ -34,6 +31,7 @@ from pvsld.core.model import PvSystemSpec
 from pvsld.core.policy import DEFAULT_DC_AC_POLICY, DcAcPolicy
 from pvsld.core.validation import ValidationReport
 from pvsld.core.validation import validate_pv_design as _validate
+from pvsld.specfile import SpecFileError, load_spec_file
 
 __all__ = [
     "GenerationResult",
@@ -42,10 +40,6 @@ __all__ = [
     "load_spec_file",
     "validate_pv_design",
 ]
-
-
-class SpecFileError(ValueError):
-    """A specification file cannot be read; the message says why and is safe to show the user."""
 
 
 def layout_diagram(spec: PvSystemSpec, derived: Derived) -> Diagram:
@@ -72,29 +66,6 @@ def validate_pv_design(
     ``dc_ac_policy`` sets the DC/AC ratio thresholds of STR-007 (see :mod:`pvsld.core.policy`).
     """
     return _validate(data, dc_ac_policy=dc_ac_policy)
-
-
-def load_spec_file(path: Path) -> dict[str, Any]:
-    """Read a ``.yaml``, ``.yml`` or ``.json`` specification into a mapping.
-
-    Raises:
-        SpecFileError: the file is missing, unreadable, not valid YAML or JSON, or not a mapping.
-    """
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise SpecFileError(f"file not found: {path}") from None
-    except OSError as error:
-        raise SpecFileError(f"cannot read {path}: {error.strerror or error}") from error
-    try:
-        document = json.loads(text) if path.suffix.lower() == ".json" else yaml.safe_load(text)
-    except (yaml.YAMLError, json.JSONDecodeError) as error:
-        raise SpecFileError(f"invalid {path.suffix or 'YAML'} in {path}: {error}") from error
-    if not isinstance(document, dict):
-        raise SpecFileError(
-            f"{path} must contain a mapping at the top level, found {type(document).__name__}"
-        )
-    return document
 
 
 @dataclass(frozen=True)

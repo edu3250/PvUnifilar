@@ -733,6 +733,99 @@ would have left three copies of the workflow to keep equal.
 
 **Status:** In Progress (3.7.1 to 3.7.3 merged, PRs #43 to #45; released as v0.6.0 on 2026-10-13, the first version on PyPI; 3.7.4: real prompts with the published package done in Copilot CLI and Antigravity CLI, the section per client in the user guide in review; open: the MCP registry)
 
+### Stage 3.8: Engine API for the PvUnifilar editor (approved by the owner 2026-10-30)
+
+**Goal:** `pvsld` serves as the engine of the interactive editor (repository
+`edu3250/PvUnifilar-modular`): the editor places, connects and evaluates components through public
+engine APIs, while the plugin keeps working unchanged.
+
+**Requests:** the editor session sent the P0 requirements ENG-001 to ENG-005 (source:
+`docs/engineering/PVSLD_REQUIREMENTS.md` in that repository). Order approved: 001 -> 002 -> 005 ->
+004 -> 003. ENG-014 (lightweight core for Pyodide) is P1; its first part (sizing imports without
+ezdxf) shipped in PR #51.
+
+**Owner decisions (2026-10-30):**
+- The palette holds only the types the engine calculates today; other symbols join when the
+  engine does.
+- The junction dot gets four anchors at the centre of each edge, in the descriptor only.
+- Adding catalogue equipment is a plugin feature; app users cannot, only the owner as administrator.
+- Inverter backfeed towards the array is assumed 0 A (see `docs/research/proy-nom-001-sede-2018-art-690.md`).
+
+#### Stage 3.8.1: ENG-001 palette descriptors
+**Goal**: `pvsld.palette` builds a versioned document (`pvsld.palette/1`): 15 types with full symbol
+geometry, bounds, ports and attributes, the JSON Schema of their spec section, and the reviewed
+catalogue equipment with its provenance. Engine-defined types (SPD, interconnection point, load
+centre, meter, grid, electrode, junction, terminal, PV connector) carry no manufacturer.
+**Success Criteria**: the editor draws each type from the descriptor, and the DXF from the same
+`SymbolSpec`; `pvsld palette [--json | --schema]` prints it.
+**Tests**: `tests/test_palette.py` (round trip descriptor -> `SymbolSpec` for every type, ports,
+anchors, provenance, determinism, schema, CLI); `tests/test_import_footprint.py` covers the module.
+**Status**: Complete
+**Out of scope**: the variable combiner box (ENG-004) and typed DC+/DC- ports (ENG-012, not approved).
+
+#### Stage 3.8.2: ENG-002 draft evaluation (two PRs, owner 2026-10-30)
+**Goal**: `pvsld.core.draft.evaluate_draft` tells an editor what is wrong with a draft and which
+rules it could not run. `validate_pv_design` stays strict for the plugin.
+- **3.8.2a, classification:** every issue keeps rule id `GEN-001` and gets a category (`missing`,
+  `incompatible`, `invalid_structure`, `unsupported`), its path and the component ids it touches.
+  Rules not run are listed with the blocking sections. A missing value is never filled in. The
+  initial "unsupported" list (more than one inverter, inverter qty > 1, micro/central/optimizer
+  inverters, more than two strings, MPPT other than A/B, storage, MT service, transformer) is
+  resolved step by step (owner 2026-10-30).
+- **3.8.2b, partial evaluation:** each rule declares the sections it reads and runs as soon as they
+  are valid; string and voltage rules first (VOLT-001, STR-001, STR-004, STR-007).
+**Tests**: `tests/test_draft.py`; the import-footprint test covers the module.
+**Status**: Complete (3.8.2a merged in PR #53; 3.8.2b adds `RuleDef.sections`, `calc.derive_strings`, `run_rules(only=...)` and the draft-side string reference check)
+
+#### Stage 3.8.3: ENG-005 manually fixed values
+**Goal**: `pvsld.sizing.choices.evaluate_choices(spec, locks)` checks every drawn equipment value
+the engine can select (string fuses/breakers, the box switch, ITM-1, ITM-P, conductor sizes,
+raceways) without reselecting it, and returns checks, updates (unlocked values) and
+recommendations (locked values that pass, informational) as separate lists. A locked value that
+fails is a finding with the engine's value as `suggested`, never a replacement. Locks name a
+component (`FUS-S1`) or one value (`FUS-S1.ie_a`). The per-device checks of `sizing/bos.py` are
+split from the selection, so the plugin and the editor judge with the same code. Owner answers
+2026-10-30: both lock levels, recommendations informational, the sizing rule ids.
+**Success Criteria**: the engine's own design gives no update; a bad unlocked value fails and gets
+an update; a bad locked value fails with `suggested` and is not updated; a locked value that
+passes gets a recommendation; no ezdxf at import.
+**Tests**: tests/test_choices.py; sizing tests unchanged after the split.
+**Status**: Complete (PR #55)
+
+#### Stage 3.8.4: ENG-004 DC protection box contents
+**Goal**: `pvsld.sizing.dcbox.dc_box(spec)` sizes and assembles the DC protection box from the
+strings alone, so the editor places it ready-made and its parts can be replaced: per string the
+connector `CX-`, entry terminal `XE-`, gPV fuse `FUS-` (or DC breaker `DCB-` on request) and exit
+terminal `XS-`; shared, the DC SPD `DPS-CD1` and the switch `DCD-CD1` (4 poles in series for one
+string, 2 per string). Each part has its palette type, block, ports, poles, values,
+requirements, string membership and reason; the box also gives the links between ports, its
+protection-schedule rows and its `dc_bos` entries (`apply_dc_box`). Locked drawn values are kept.
+Owner answers 2026-10-30: the engine sizes the SPD (Type 2, U_CPV >= Voc max SPD-002, In >= 5 kA
+SPD-003, I_SCPV >= 1.25 x Isc SPD-004; no SPD in the catalogue yet, so U_CPV takes the usual
+commercial class and In the template's 20 kA, stated as assumptions); fuse by default, breaker
+on request; connectors and terminals included.
+**Success Criteria**: 1x5 -> 2x5 adds S2's parts and switches DCD-CD1 to 2 poles per string;
+removing the string gives back the 1x5 box; the applied spec validates; evaluate_choices finds
+nothing to update in a fresh box.
+**Tests**: tests/test_dcbox.py.
+**Status**: Complete (PR #56; SPD from the catalogue in PR #57)
+
+#### Stage 3.8.5: ENG-003 topology mapping (1 inverter, up to 2 strings first)
+**Goal**: `pvsld.graph.graph_to_spec(graph, template)` turns the editor's drawing
+(`pvsld.graph/1`: palette-typed nodes with values, cables port to port, the DC box as a group
+node of ENG-004's parts) plus the project template into a specification, deducing each string's
+inverter and MPPT, the circuits and their lengths, the DC box parts and the AC chain (ITM-1,
+point of connection, service main) from the cables. Values not drawn take the engine's defaults
+or selection and are listed as `filled`; no node is dropped (each is `mapped` or has an issue).
+`pvsld.capabilities` is the versioned capability matrix (`pvsld capabilities [--json]`) and the
+draft evaluation takes its limits from it. Owner answers 2026-11-03: the engine defines the graph
+format; the DC box is a group node; missing lengths take the engine's defaults.
+**Success Criteria**: the owner's 2x5 drawing gives a complete, valid spec on which
+evaluate_choices proposes nothing; the MPPT follows the cable; broken drawings name their nodes;
+a third string is kept and flagged unsupported.
+**Tests**: tests/test_graph.py.
+**Status**: Complete (PR #58)
+
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:

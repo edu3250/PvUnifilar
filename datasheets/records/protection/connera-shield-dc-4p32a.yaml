@@ -1,0 +1,59 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per rated voltage.
+# The datasheet publishes no utilization category, insulation voltage or standards (owner 2026-11-03: load it so).
+component_type: dc_switch
+family_id: CONNERA-SHIELD-DC-4P32A
+manufacturer: Connera
+range_name: SHIELD-DC-4P32A DC disconnect switch, 4 poles, enclosed
+poles: 4
+utilization_category: null
+insulation_voltage_v: null
+standards: null
+ip_rating: IP66 enclosure (UV-resistant, flame-retardant plastic)
+short_time_withstand: Uimp 8 kV; arc extinction 3 ms
+mechanical_life_ops: 20000
+electrical_life_ops: 2000
+variants:
+  - component_id: CONNERA-SHIELD-DC-4P32A-10
+    enclosed_thermal_current_a: 32
+    ratings:                       # "Tipos de conexión": type 4 (two strings, 2 poles each), type 4B (one string, 4 poles)
+      - {poles_per_circuit: 2, voltage_v: 300,  ie_a: 32}
+      - {poles_per_circuit: 2, voltage_v: 500,  ie_a: 32}
+      - {poles_per_circuit: 2, voltage_v: 600,  ie_a: 13}
+      - {poles_per_circuit: 2, voltage_v: 1000, ie_a: 9}
+      - {poles_per_circuit: 4, voltage_v: 300,  ie_a: 32}
+      - {poles_per_circuit: 4, voltage_v: 500,  ie_a: 32}
+      - {poles_per_circuit: 4, voltage_v: 600,  ie_a: 32}
+      - {poles_per_circuit: 4, voltage_v: 800,  ie_a: 32}
+      - {poles_per_circuit: 4, voltage_v: 1000, ie_a: 32}
+  - component_id: CONNERA-SHIELD-DC-4P32A-12
+    enclosed_thermal_current_a: 32
+    ratings:                       # type 4 (two strings, 2 poles each), type 4B (one string, 4 poles)
+      - {poles_per_circuit: 2, voltage_v: 300,  ie_a: 50}
+      - {poles_per_circuit: 2, voltage_v: 600,  ie_a: 50}
+      - {poles_per_circuit: 2, voltage_v: 1000, ie_a: 50}
+      - {poles_per_circuit: 2, voltage_v: 1200, ie_a: 32}
+      - {poles_per_circuit: 2, voltage_v: 1500, ie_a: 16}
+      - {poles_per_circuit: 4, voltage_v: 300,  ie_a: 50}
+      - {poles_per_circuit: 4, voltage_v: 600,  ie_a: 50}
+      - {poles_per_circuit: 4, voltage_v: 1200, ie_a: 50}
+      - {poles_per_circuit: 4, voltage_v: 1500, ie_a: 35}
+source:
+  filename: ft_ficha_tecnica_desconectadores_shield.pdf
+  sha256: 61ac33ec49377e0c9ee0e5fd6293834b5b235a00b969dec52a648f23aa9f83ef
+  title: Connera SHIELD, ficha técnica, desconectadores de corriente directa en 4 polos SHIELD-DC-4P32A-10 y -12 (FTCO-SHDES-1904291)
+  pages: [2, 3, 4]
+  extraction_method: rendered_page
+  extraction_date: 2026-11-03
+  reviewed_by: edu3250
+  review_date: 2026-11-03
+  notes: >-
+    The owner provided the PDF on 2026-11-03 (also received as Desconectador_tencica.pdf, the same file). Values read
+    from the rendered pages (the text layer scrambles the tables). The datasheet does not publish a utilization category
+    (DC-PV1/DC-PV2), a rated insulation voltage or the standards; the owner chose to load the record with those fields
+    empty, so the responsible engineer must confirm them with the distributor. Rated voltage 1000 Vcd (-10) and
+    1200 Vcd (-12), rated current 32 A, taken as the enclosed thermal current: the 40 A and 50 A rows are capped to it
+    by the engine. The -12 table lists rows at 1500 V above its 1200 Vcd rating; they are kept as printed. Model -10
+    also offers type 2H (one string, two breaks per pole: 300 V and 500 V, 40 A) and type 4S (one string, 32 A up to
+    1000 V); both use all four poles and their values are covered by the 4B rows. Temperature range -40 to 85 °C
+    (not stated as operating or storage), IP66, power 20 kW max, mechanical 20000 / electrical 2000 operations,
+    grounding terminals only on -10, lockable with a padlock, vertical or horizontal mounting.

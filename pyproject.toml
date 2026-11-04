@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pvsld"
-version = "0.6.1"
+version = "0.7.0"
 description = "PvUnifilar: MCP server and CLI that design and draw Mexican photovoltaic single-line diagrams."
 # What PyPI shows. The repository README has relative image paths, which do not work there.
 readme = "docs/pypi.md"

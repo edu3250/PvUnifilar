@@ -28,7 +28,7 @@ Scope notes, where the vault definition needs data that schema 0.1.0 does not ca
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -95,6 +95,9 @@ class RuleDef:
     mx_ids: tuple[str, ...]
     check: Callable[[RuleContext], Iterator[tuple[Severity, str, str]]]
     """Yields ``(severity, subject, message_es)`` for each violation."""
+    sections: tuple[str, ...] = ()
+    """Spec sections the check reads, for draft evaluation (:mod:`pvsld.core.draft`): the rule can
+    run on a draft once these are valid. Empty means it needs the whole specification."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -444,6 +447,9 @@ def _dis_004(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
             )
 
 
+STRING_SECTIONS = ("project.site", "standards", "modules", "inverters", "strings")
+"""What the string and voltage rules read: they run on a draft before the AC side exists."""
+
 RULES: tuple[RuleDef, ...] = (
     RuleDef(
         id="VOLT-001",
@@ -453,6 +459,7 @@ RULES: tuple[RuleDef, ...] = (
         cites=(Cite("NOM-001-SEDE-2012", "690-7(a)"), Cite("NOM-001-SEDE-2012", "110-3(b)")),
         mx_ids=("MX-C02",),
         check=_volt_001,
+        sections=STRING_SECTIONS,
     ),
     RuleDef(
         id="STR-001",
@@ -462,6 +469,7 @@ RULES: tuple[RuleDef, ...] = (
         cites=(Cite("NOM-001-SEDE-2012", "110-3(b)"),),
         mx_ids=("MX-C04",),
         check=_str_001,
+        sections=STRING_SECTIONS,
     ),
     RuleDef(
         id="STR-004",
@@ -471,6 +479,7 @@ RULES: tuple[RuleDef, ...] = (
         cites=(Cite("NOM-001-SEDE-2012", "690-8(a)(1)"),),
         mx_ids=("MX-C05",),
         check=_str_004,
+        sections=STRING_SECTIONS,
     ),
     RuleDef(
         id="STR-007",
@@ -480,6 +489,7 @@ RULES: tuple[RuleDef, ...] = (
         cites=(Cite("NOM-001-SEDE-2012", "110-3(b)"),),
         mx_ids=(),
         check=_str_007,
+        sections=STRING_SECTIONS,
     ),
     RuleDef(
         id="CON-003",
@@ -560,17 +570,24 @@ def rulepack_catalogue() -> list[dict[str, Any]]:
 
 
 def run_rules(
-    spec: PvSystemSpec, derived: Derived, policy: DcAcPolicy = DEFAULT_DC_AC_POLICY
+    spec: PvSystemSpec,
+    derived: Derived,
+    policy: DcAcPolicy = DEFAULT_DC_AC_POLICY,
+    *,
+    only: Iterable[str] | None = None,
 ) -> list[Finding]:
-    """Run every rule of the pack, in pack order, and return the findings.
+    """Run every rule of the pack (or the ids in ``only``), in pack order; return the findings.
 
     ``policy`` carries the DC/AC ratio thresholds of STR-007 (project policy, not regulation).
     """
+    wanted = None if only is None else set(only)
     ctx = RuleContext(
         spec=spec, derived=derived, tables=get_tables(spec.standards.nom_edition), policy=policy
     )
     findings: list[Finding] = []
     for rule in RULES:
+        if wanted is not None and rule.id not in wanted:
+            continue
         findings.extend(
             Finding(
                 rule_id=rule.id,

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-03
+
+### Added
+
+- `pvsld.graph.graph_to_spec`: the editor's drawing (`pvsld.graph/1`: nodes from the palette, cables port to port, the DC box as a group node) becomes a specification (ENG-003). Each string's inverter and MPPT, the circuits and their lengths, the box parts and the AC chain come from the cables; values not drawn take the engine's defaults or selection and are listed as filled; every node is mapped or reported.
+- `pvsld.capabilities` and `pvsld capabilities [--json]`: the capability matrix of what the engine calculates today; the draft evaluation takes its limits from it.
+- Connera SHIELD-DC-4P32A-10 and -12 PV switch-disconnectors. Their datasheet publishes no utilization category, insulation voltage or standards, so those catalogue fields are now optional (empty means not published) and the box note says so. On a rating tie the box prefers a switch whose category is published.
+- Catalogue type `dc_spd` (DC surge protective device) and the CLAMPER Solar record (Class II, NOM-ANCE, U_CPV 150 to 1100 V, every version including the uncertified 10 kA ones and the remote-signalling /SR ones). The DC box now picks its SPD from the catalogue (`bos.spd_for`: certified first, then without remote signalling, then the lowest U_CPV); the provisional SPD values remain only when nothing fits. `Spd` in the parameter model gains an optional `model`.
+- `pvsld.sizing.dcbox.dc_box` and `apply_dc_box`: the DC protection box sized and assembled from the strings (ENG-004): connectors, terminals, a gPV fuse (or DC breaker) per string, the DC SPD and the ganged switch, each with its ports, poles, values, requirements, strings and reason, plus the links, the protection-schedule rows and the `dc_bos` entries. The engine now sizes the DC SPD (Type 2, U_CPV, In and I_SCPV after IEC 60364-7-712); with no SPD in the catalogue its U_CPV class and In are stated assumptions.
+- `pvsld.sizing.choices.evaluate_choices`: checks the equipment values a user fixed by hand without reselecting them (ENG-005). It returns checks, updates for unlocked values and informational recommendations for locked values that pass, as separate lists; a locked value that fails is reported with the engine's value as a suggestion and is never replaced. Locks name a component (`FUS-S1`) or one value (`FUS-S1.ie_a`).
+- Partial draft evaluation (ENG-002, part b): the string and voltage rules (VOLT-001, STR-001, STR-004, STR-007) run on a draft as soon as the site, standards, modules, inverters and strings are valid, before the AC side exists. `RuleDef.sections` declares what each rule reads, `calc.derive_strings` computes the string values alone, and the draft checks the strings' module, inverter and MPPT references itself.
+- `pvsld.core.draft.evaluate_draft`: draft evaluation for the editor (ENG-002, part a). Each issue keeps `GEN-001` and adds a category (missing, incompatible, invalid structure, unsupported), its path and the affected component ids; rules that could not run are listed with the blocking sections. Missing values are never filled in.
+- `pvsld.palette` and `pvsld palette [--json | --schema]`: the editor palette (ENG-001). It lists the 15 types the engine calculates, each with full symbol geometry, ports, attributes and the JSON Schema of its spec section, plus the reviewed catalogue equipment with provenance. The junction gets four anchors at the centre of each edge.
+
+### Changed
+
+- Rule ids aligned with the vault catalogue: AC breaker interrupting ratings report OCP-006 (was OCP-003), the box disconnect's ratings DIS-002 (was DIS-001), and a string protection's voltage or breaking capacity OCP-004 (was OCP-002; its current window stays OCP-002). DIS-001 keeps its meaning, a missing DC disconnect.
+- Suntree SL7N-63 DC breaker record updated from the newer catalogue pages (2026-11-03): Ue options per pole count, mechanical and electrical life, certificates, and the breaking capacity read as 6 kA except 2 kA at 2P 800 V and 4P 1200 V (the earlier record had it inverted; no PV design changes, string faults are far below 2 kA).
+- `pvsld.sizing.bos`: the check of each device (gPV fuse, DC breaker, box switch, AC breaker) is split from its selection (`fuse_problem`, `breaker_fit`, `box_switch_problem`, `ac_breaker_problem`, `fuse_for`, `breaker_for`), so sizing and `evaluate_choices` use the same criteria. Selections are unchanged.
+- `import pvsld.sizing` no longer loads ezdxf: the spec-file reader moved to `pvsld.specfile` (still re-exported by `pvsld.service`). This cuts about 3 s from an on-device start (Pyodide, ENG-014).
+
 ## [0.6.1] - 2026-10-13
 
 The draft notice is part of every result that delivers a drawing, so the user reads it whatever model relays the result; and the user guide covers Copilot CLI and Antigravity CLI.

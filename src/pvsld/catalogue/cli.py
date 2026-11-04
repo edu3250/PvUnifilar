@@ -35,7 +35,7 @@ from pvsld.catalogue.local import (
     local_catalogue_dir,
 )
 from pvsld.catalogue.modules import PVModule
-from pvsld.catalogue.protection import AcBreaker, DcBreaker, DcFuse, DcSwitch
+from pvsld.catalogue.protection import AcBreaker, DcBreaker, DcFuse, DcSpd, DcSwitch
 from pvsld.catalogue.registry import RECORD_FOLDERS, Component, ComponentRegistry, load_records
 from pvsld.resources import data_path
 
@@ -55,6 +55,8 @@ def _rating(component: Component) -> str:
         return f"{component.rated_current_a:g} A {component.interrupting_ka:g} kA"
     if isinstance(component, DcSwitch):
         return f"{component.poles}P {component.enclosed_thermal_current_a:g} A"
+    if isinstance(component, DcSpd):
+        return f"{component.spd_type} {component.ucpv_v:g} V In {component.in_ka:g} kA"
     if isinstance(component, Cable):
         return f"{component.size} {component.outer_diameter_mm:g} mm"
     if isinstance(component, DcFuse):

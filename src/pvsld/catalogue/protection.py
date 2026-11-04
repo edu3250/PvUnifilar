@@ -479,9 +479,17 @@ class DcSwitchSpec(Strict):
     manufacturer: str = Field(min_length=1)
     range_name: str = Field(min_length=1)
     poles: PositiveInt
-    utilization_category: str = Field(min_length=1)
-    insulation_voltage_v: PositiveFloat
-    standards: list[str] = Field(min_length=1)
+    utilization_category: str | None = Field(
+        default=None,
+        min_length=1,
+        description="IEC 60947-3 category, e.g. DC-PV2; None when not published",
+    )
+    insulation_voltage_v: PositiveFloat | None = Field(
+        default=None, description="Ui; None when the manufacturer does not publish it"
+    )
+    standards: list[str] | None = Field(
+        default=None, min_length=1, description="None when the manufacturer does not publish them"
+    )
     certifications: list[str] | None = None
     ip_rating: str | None = None
     short_time_withstand: str | None = None
@@ -560,4 +568,119 @@ class DcSwitch(DcSwitchSpec, DcSwitchVariant):
     @property
     def reviewed(self) -> bool:
         """True once the owner has approved the record this switch came from."""
+        return self.source.reviewed
+
+
+# --- DC surge protective devices ---------------------------------------------------------------
+
+
+class DcSpdVariant(Strict):
+    """One version of a PV surge protective device range (one catalogue reference)."""
+
+    component_id: ComponentId = Field(
+        description="Catalogue reference, e.g. CLAMPER-SOLAR-600V-18KA"
+    )
+    product_code: str | None = Field(
+        default=None, description="Manufacturer's ordering code of the complete device, as printed"
+    )
+    ucpv_v: PositiveFloat = Field(description="Maximum continuous DC operating voltage U_CPV")
+    in_ka: PositiveFloat = Field(description="Nominal discharge current I_n (8/20 us)")
+    imax_ka: PositiveFloat = Field(description="Maximum discharge current I_max (8/20 us)")
+    itotal_ka: PositiveFloat | None = Field(
+        default=None, description="Total discharge current (8/20 us)"
+    )
+    uref_v: PositiveFloat | None = Field(default=None, description="Reference voltage at 1 mA")
+    up_kv: PositiveFloat = Field(description="Voltage protection level U_p (the printed maximum)")
+    remote_signalling: bool = False
+    certified: bool = Field(
+        default=True, description="False when the datasheet says this version is not certified"
+    )
+
+    @model_validator(mode="after")
+    def _plausible(self) -> DcSpdVariant:
+        problems = []
+        if self.imax_ka < self.in_ka:
+            problems.append(f"imax_ka {self.imax_ka:g} is below in_ka {self.in_ka:g}")
+        raise_problems(problems)
+        return self
+
+
+class DcSpdSpec(Strict):
+    """Values every version of a PV SPD range shares (field group, not used on its own)."""
+
+    manufacturer: str = Field(min_length=1)
+    range_name: str = Field(min_length=1)
+    spd_class: Literal["I", "II", "I+II"] = Field(description="IEC/EN class (Type 1, 2, 1+2)")
+    technology: str = Field(min_length=1, description="e.g. MOV with thermal disconnector")
+    standards: list[str] = Field(min_length=1)
+    certifications: list[str] | None = None
+    protection_modes: list[str] = Field(min_length=1, description="e.g. L+/PE, L-/PE, L+/L-")
+    iscpv_ka: PositiveFloat = Field(
+        description="Short-circuit current rating I_SCPV (without backup fuse when stated so)"
+    )
+    backup_fuse: str | None = Field(default=None, description="Backup fuse, as printed")
+    response_time_ns: PositiveFloat | None = None
+    operating_temp_c: Range | None = None
+    ip_rating: str | None = None
+    wire_range: str | None = None
+    mounting: str | None = None
+
+    @model_validator(mode="after")
+    def _plausible_range(self) -> DcSpdSpec:
+        problem = (
+            check_range("operating_temp_c", self.operating_temp_c)
+            if self.operating_temp_c
+            else None
+        )
+        raise_problems([problem] if problem else [])
+        return self
+
+
+class DcSpdFamily(DcSpdSpec):
+    """A datasheet range of PV SPDs: shared values once, one variant per version."""
+
+    component_type: Literal["dc_spd"]
+    family_id: ComponentId
+    variants: list[DcSpdVariant] = Field(min_length=1)
+    source: Provenance
+
+    @model_validator(mode="after")
+    def _plausible_variants(self) -> DcSpdFamily:
+        problems = [
+            f"duplicate variant component_id {name!r}"
+            for name in duplicates([v.component_id for v in self.variants])
+        ]
+        raise_problems(problems)
+        return self
+
+    def expand(self) -> list[DcSpd]:
+        """One standalone ``DcSpd`` per variant (family values + variant values)."""
+        shared = {name: getattr(self, name) for name in DcSpdSpec.model_fields}
+        return [
+            DcSpd(
+                component_type=self.component_type,
+                family_id=self.family_id,
+                source=self.source,
+                **shared,
+                **{name: getattr(variant, name) for name in DcSpdVariant.model_fields},
+            )
+            for variant in self.variants
+        ]
+
+
+class DcSpd(DcSpdSpec, DcSpdVariant):
+    """One PV surge protective device as the sizing engine sees it."""
+
+    component_type: Literal["dc_spd"]
+    family_id: ComponentId
+    source: Provenance
+
+    @property
+    def spd_type(self) -> str:
+        """The type the drawing prints: T1, T2 or T1+T2."""
+        return {"I": "T1", "II": "T2", "I+II": "T1+T2"}[self.spd_class]
+
+    @property
+    def reviewed(self) -> bool:
+        """True once the owner has approved the record this SPD came from."""
         return self.source.reviewed
