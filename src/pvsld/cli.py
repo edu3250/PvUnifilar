@@ -14,6 +14,7 @@ Usage::
     pvsld symbols build [-o PATH] [--png PATH] [--check] | list [--json] | validate [PATH]
     pvsld sheet import TEMPLATE.dwg [-o PATH] | check [PATH]
     pvsld palette [--json | --schema]
+    pvsld capabilities [--json]
 
 ``validate`` parses the specification against the parameter model and runs the rule pack
 ``mx-gd-2026.10``; the exit code is 1 when a rule of severity ``E`` fails. ``generate`` validates
@@ -435,6 +436,19 @@ def _palette(args: argparse.Namespace) -> int:
     return 0
 
 
+def _capabilities(args: argparse.Namespace) -> int:
+    from pvsld.capabilities import capabilities
+
+    document = capabilities()
+    if args.json:
+        print(json.dumps(document, indent=2, ensure_ascii=False))
+        return 0
+    print(document["format"])
+    for item in document["capabilities"]:
+        print(f"  {item['status']:<10} {item['id']:<22} {item['detail_es']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pvsld",
@@ -691,6 +705,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--schema", action="store_true", help="print the JSON Schema of the palette document"
     )
     palette.set_defaults(run=_palette)
+    caps = subcommands.add_parser(
+        "capabilities",
+        help="print what the engine calculates today (the capability matrix)",
+        description="List each topology feature as supported or pending (ENG-003).",
+    )
+    caps.add_argument("--json", action="store_true", help="print the matrix as JSON")
+    caps.set_defaults(run=_capabilities)
     catalogue_cli.register(subcommands)
     symbols_cli.register(subcommands)
     sheet_cli.register(subcommands)

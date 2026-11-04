@@ -34,6 +34,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from pvsld.capabilities import (
+    INVERTER_DC_PORTS,
+    MAX_INVERTERS,
+    MAX_STRINGS,
+    SUPPORTED_INVERTER_TYPES,
+)
 from pvsld.core import calc
 from pvsld.core.calc import Derived
 from pvsld.core.model import RULEPACK_ID, SCHEMA_VERSION, Project, PvSystemSpec, parse_spec
@@ -64,10 +70,6 @@ _STRUCTURE_TYPES = frozenset(
     }
 )
 
-SUPPORTED_INVERTER_TYPES = frozenset({"string", "hybrid"})
-MAX_INVERTERS = 1
-MAX_STRINGS = 2
-INVERTER_DC_PORTS = ("A", "B")
 """DC inputs of the inverter symbol ``PVSLD_INV`` that a string can be drawn on."""
 
 

@@ -808,10 +808,23 @@ on request; connectors and terminals included.
 removing the string gives back the 1x5 box; the applied spec validates; evaluate_choices finds
 nothing to update in a fresh box.
 **Tests**: tests/test_dcbox.py.
-**Status**: In Progress (PR open)
+**Status**: Complete (PR #56; SPD from the catalogue in PR #57)
 
 #### Stage 3.8.5: ENG-003 topology mapping (1 inverter, up to 2 strings first)
-**Status**: Not Started
+**Goal**: `pvsld.graph.graph_to_spec(graph, template)` turns the editor's drawing
+(`pvsld.graph/1`: palette-typed nodes with values, cables port to port, the DC box as a group
+node of ENG-004's parts) plus the project template into a specification, deducing each string's
+inverter and MPPT, the circuits and their lengths, the DC box parts and the AC chain (ITM-1,
+point of connection, service main) from the cables. Values not drawn take the engine's defaults
+or selection and are listed as `filled`; no node is dropped (each is `mapped` or has an issue).
+`pvsld.capabilities` is the versioned capability matrix (`pvsld capabilities [--json]`) and the
+draft evaluation takes its limits from it. Owner answers 2026-11-03: the engine defines the graph
+format; the DC box is a group node; missing lengths take the engine's defaults.
+**Success Criteria**: the owner's 2x5 drawing gives a complete, valid spec on which
+evaluate_choices proposes nothing; the MPPT follows the cable; broken drawings name their nodes;
+a third string is kept and flagged unsupported.
+**Tests**: tests/test_graph.py.
+**Status**: In Progress (PR open)
 
 ---
 
