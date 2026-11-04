@@ -249,3 +249,12 @@ def test_capabilities_document(capsys) -> None:
     assert statuses["dc_box"] == "supported"
     assert main(["capabilities", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["format"] == "pvsld.capabilities/1"
+
+
+def test_derived_fields_come_from_the_cables(graph, template, registry) -> None:
+    graph["nodes"][0]["values"]["mppt"] = "B"  # S1 is wired to A
+    graph["nodes"][4]["values"] = {"role": "I2", "backfed": False, "at": "X"}  # ITM-1
+    result = graph_to_spec(graph, template, registry=registry)
+    assert result.spec["strings"][0]["mppt"] == "A"
+    itm = result.spec["ac_bos"]["ocpds"][0]
+    assert (itm["role"], itm["backfed"], itm["at"]) == ("I1", True, "CC-1")

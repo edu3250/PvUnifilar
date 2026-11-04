@@ -826,6 +826,19 @@ a third string is kept and flagged unsupported.
 **Tests**: tests/test_graph.py.
 **Status**: Complete (PR #58)
 
+#### Stage 3.8.6: ENG-013 naming rules and derived fields in the palette
+**Goal**: each palette type publishes its naming rules (`naming`: `S{n}`, `FUS-{string}`,
+`ITM-{n}` plus `ITM-P` for the service main, `XE-`/`XS-{string}` for the box terminals...) and the
+values of its spec section that come from the connections (`derived_fields`: the string's
+inverter and MPPT, the SPD's `at`, ITM-1's role, backfed and at, the load centre's main OCPD, the
+point of connection's panel and breaker); the palette lists the ids the engine creates itself
+(`derived_names`: C-S<n>, C-INV, DCD-1, MOD<n>), and `next_id` applies a rule (first free number).
+`graph_to_spec` lets the connections win over a drawn value of a derived field. Request from the
+editor session approved by the owner 2026-11-03; ids that do not follow a rule are accepted (no
+new warning), except the box parts already checked against their string.
+**Tests**: tests/test_palette_naming.py; tests/test_graph.py.
+**Status**: In Progress (PR open)
+
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:

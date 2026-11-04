@@ -564,7 +564,8 @@ def graph_to_spec(
         elif node.type == "dc_switch":
             disconnects.append(_device(node, b, len(disconnects)))
         elif node.type == "dc_spd":
-            entry = {"id": node_id, "at": f"{first_inverter}.dc", **node.values}
+            # "at" comes from the connections (a derived field of the palette, ENG-013).
+            entry = {**node.values, "id": node_id, "at": f"{first_inverter}.dc"}
             b.mapped[node_id] = f"dc_bos.spds[{len(spds)}]"
             spds.append(entry)
     spec["dc_bos"] = {"combiners": [], "disconnects": disconnects, "spds": spds}
@@ -595,7 +596,7 @@ def graph_to_spec(
 
 def _device(node: GraphNode, b: _Builder, index: int) -> dict[str, Any]:
     b.mapped[node.id] = f"dc_bos.disconnects[{index}]"
-    return {"id": node.id, "integrated_in": None, **node.values}
+    return {**node.values, "id": node.id, "integrated_in": None}
 
 
 def _ac_side(
@@ -641,10 +642,11 @@ def _ac_side(
         itm = breakers[hit[0]]
         index = upsert(ocpds, itm)
         entry = ocpds[index]
-        entry.setdefault("role", "I1")
+        # role, backfed and at come from the connections (derived fields, ENG-013).
+        entry["role"] = "I1"
+        entry["backfed"] = True
         entry.setdefault("poles", phases)
         entry.setdefault("voltage_v", AC_BREAKER_VOLTAGE_V)
-        entry.setdefault("backfed", True)
         if inverter is not None and "rating_a" not in entry:
             rating = bos.ac_ocpd_rating_a(inverter["iac_max_a"], tables)
             choice, _found = bos.select_ac_breaker(
@@ -699,10 +701,8 @@ def _ac_side(
                 other = p.split(".", 1)[0]
                 if other in breakers and other not in inverter_breakers and other != node.id:
                     main_index = upsert(mains, breakers[other])
-                    mains[main_index].setdefault("role", "I2")
-                    panels[index].setdefault("main_ocpd", other)
-                    if panels[index].get("main_ocpd") != other:
-                        panels[index]["main_ocpd"] = other
+                    mains[main_index]["role"] = "I2"
+                    panels[index]["main_ocpd"] = other
                     b.mapped[other] = f"ac_bos.main_breakers[{main_index}]"
     for node in (n for n in b.nodes.values() if n.type == "meter"):
         index = upsert(meters, node)
