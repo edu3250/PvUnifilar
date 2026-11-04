@@ -53,10 +53,13 @@ from pvsld.symbols.cfe.model import (
 __all__ = [
     "FORMAT",
     "TYPES",
+    "DerivedName",
     "EquipmentEntry",
+    "NamingRule",
     "Palette",
     "TypeDescriptor",
     "build_palette",
+    "next_id",
     "palette_json_schema",
     "symbol_from_descriptor",
 ]
@@ -221,6 +224,29 @@ class SymbolModel(BaseModel):
 # --- Types and equipment -------------------------------------------------------------------------
 
 
+class NamingRule(BaseModel):
+    """How the engine names a new part of a type (ENG-013).
+
+    ``pattern`` holds ``{n}``, the first free number (``S{n}`` -> S1, S2...), or ``{string}``, the
+    id of the string the part belongs to (``FUS-{string}`` -> FUS-S1). ``context`` tells apart the
+    rules of one type: ``default``, or where the part sits (``dc_box_entry``, ``service_main``...).
+    """
+
+    model_config = _STRICT
+    pattern: str = Field(pattern=r"^[A-Z][A-Z0-9-]*\{(n|string)\}$|^[A-Z][A-Z0-9-]*$")
+    context: str = "default"
+    description_es: str
+
+
+class DerivedName(BaseModel):
+    """An id the engine creates itself; no palette item places it (circuits, integrated parts)."""
+
+    model_config = _STRICT
+    pattern: str
+    spec_section: str
+    description_es: str
+
+
 class TypeDescriptor(BaseModel):
     """One placeable type: its symbol, the spec section it edits and where its data comes from."""
 
@@ -242,6 +268,14 @@ class TypeDescriptor(BaseModel):
     )
     parameters_schema: dict[str, Any] = Field(
         description="JSON Schema of the spec section (empty when the type has no editable values)"
+    )
+    naming: tuple[NamingRule, ...] = Field(
+        default=(), description="How the engine names new parts of this type (ENG-013)"
+    )
+    derived_fields: tuple[str, ...] = Field(
+        default=(),
+        description="Values of the spec section that come from the connections "
+        "(pvsld.graph.graph_to_spec); an editor does not ask for them",
     )
     symbol: SymbolModel
     fingerprint: str = Field(description="SHA-256 of this descriptor without the fingerprint")
@@ -279,6 +313,9 @@ class Palette(BaseModel):
     schema_version: str = Field(description="Version of the parameter specification")
     types: tuple[TypeDescriptor, ...]
     equipment: tuple[EquipmentEntry, ...]
+    derived_names: tuple[DerivedName, ...] = Field(
+        default=(), description="Ids the engine creates itself (ENG-013)"
+    )
     fingerprint: str = Field(description="SHA-256 of the document without the fingerprint")
 
     def type(self, type_id: str) -> TypeDescriptor:
@@ -305,6 +342,8 @@ class _TypeDef:
         spec_section: str | None = None,
         spec_model_name: str | None = None,
         id_prefix: str | None = None,
+        naming: tuple[NamingRule, ...] = (),
+        derived_fields: tuple[str, ...] = (),
     ) -> None:
         self.type_id = type_id
         self.label_es = label_es
@@ -313,7 +352,15 @@ class _TypeDef:
         self.spec_section = spec_section
         self.spec_model_name = spec_model_name
         self.id_prefix = id_prefix
+        self.naming = naming
+        self.derived_fields = derived_fields
 
+
+def _rule(pattern: str, description_es: str, context: str = "default") -> NamingRule:
+    return NamingRule(pattern=pattern, context=context, description_es=description_es)
+
+
+_PER_STRING = "uno por cadena: el id de la cadena va después del prefijo"
 
 TYPES: tuple[_TypeDef, ...] = (
     _TypeDef(
@@ -323,6 +370,8 @@ TYPES: tuple[_TypeDef, ...] = (
         component_types=("pv_module",),
         spec_section="strings[]",
         spec_model_name="StringSpec",
+        naming=(_rule("S{n}", "S1, S2... (los circuitos C-S<n> siguen el mismo número)"),),
+        derived_fields=("inverter", "mppt"),
     ),
     _TypeDef(
         "inverter",
@@ -331,6 +380,7 @@ TYPES: tuple[_TypeDef, ...] = (
         component_types=("string_inverter", "hybrid_inverter"),
         spec_section="inverters[]",
         spec_model_name="Inverter",
+        naming=(_rule("INV{n}", "INV1, INV2..."),),
     ),
     _TypeDef(
         "dc_fuse_holder",
@@ -340,6 +390,8 @@ TYPES: tuple[_TypeDef, ...] = (
         spec_section="dc_bos.disconnects[]",
         spec_model_name="DcDisconnect",
         id_prefix="FUS-",
+        naming=(_rule("FUS-{string}", f"FUS-S1: {_PER_STRING}"),),
+        derived_fields=("integrated_in",),
     ),
     _TypeDef(
         "dc_breaker",
@@ -349,6 +401,8 @@ TYPES: tuple[_TypeDef, ...] = (
         spec_section="dc_bos.disconnects[]",
         spec_model_name="DcDisconnect",
         id_prefix="DCB-",
+        naming=(_rule("DCB-{string}", f"DCB-S1: {_PER_STRING}"),),
+        derived_fields=("integrated_in",),
     ),
     _TypeDef(
         "dc_switch",
@@ -357,6 +411,8 @@ TYPES: tuple[_TypeDef, ...] = (
         component_types=("dc_switch",),
         spec_section="dc_bos.disconnects[]",
         spec_model_name="DcDisconnect",
+        naming=(_rule("DCD-CD{n}", "Seccionador de la caja de protecciones CD: DCD-CD1"),),
+        derived_fields=("integrated_in",),
     ),
     _TypeDef(
         "dc_spd",
@@ -365,6 +421,8 @@ TYPES: tuple[_TypeDef, ...] = (
         component_types=("dc_spd",),
         spec_section="dc_bos.spds[]",
         spec_model_name="Spd",
+        naming=(_rule("DPS-CD{n}", "DPS de la caja de protecciones CD: DPS-CD1"),),
+        derived_fields=("at",),
     ),
     _TypeDef(
         "ac_breaker",
@@ -373,6 +431,11 @@ TYPES: tuple[_TypeDef, ...] = (
         component_types=("ac_breaker",),
         spec_section="ac_bos.ocpds[]",
         spec_model_name="Ocpd",
+        naming=(
+            _rule("ITM-{n}", "ITM-1 (salida del inversor), ITM-2..."),
+            _rule("ITM-P", "Interruptor principal del servicio", "service_main"),
+        ),
+        derived_fields=("role", "backfed", "at"),
     ),
     _TypeDef(
         "interconnection_point",
@@ -380,6 +443,8 @@ TYPES: tuple[_TypeDef, ...] = (
         "PVSLD_PI",
         spec_section="ac_bos.point_of_connection",
         spec_model_name="PointOfConnection",
+        naming=(_rule("PI-{n}", "PI-1"),),
+        derived_fields=("panel", "breaker"),
     ),
     _TypeDef(
         "load_centre",
@@ -387,6 +452,8 @@ TYPES: tuple[_TypeDef, ...] = (
         "PVSLD_PANEL",
         spec_section="ac_bos.panels[]",
         spec_model_name="Panel",
+        naming=(_rule("CC-{n}", "CC-1"),),
+        derived_fields=("main_ocpd",),
     ),
     _TypeDef(
         "meter",
@@ -394,6 +461,7 @@ TYPES: tuple[_TypeDef, ...] = (
         "PVSLD_METER",
         spec_section="ac_bos.meters[]",
         spec_model_name="Meter",
+        naming=(_rule("M-{n}", "M-1"),),
     ),
     _TypeDef(
         "grid",
@@ -401,6 +469,7 @@ TYPES: tuple[_TypeDef, ...] = (
         "PVSLD_GRID",
         spec_section="utility",
         spec_model_name="Utility",
+        naming=(_rule("RED-{n}", "RED-1"),),
     ),
     _TypeDef(
         "ground_electrode",
@@ -408,12 +477,82 @@ TYPES: tuple[_TypeDef, ...] = (
         "PVSLD_GND",
         spec_section="grounding.electrodes[]",
         spec_model_name="Electrode",
+        naming=(_rule("TE-{n}", "TE-1"),),
     ),
-    _TypeDef("junction", "Unión de conductores", "PVSLD_JUNCTION"),
-    _TypeDef("terminal", "Terminal o borne", "PVSLD_TERMINAL"),
-    _TypeDef("pv_connector", "Conector de CD (tipo MC4)", "PVSLD_PV_CONNECTOR"),
+    _TypeDef(
+        "junction",
+        "Unión de conductores",
+        "PVSLD_JUNCTION",
+        naming=(_rule("J{n}", "J1, J2..."),),
+    ),
+    _TypeDef(
+        "terminal",
+        "Terminal o borne",
+        "PVSLD_TERMINAL",
+        naming=(
+            _rule("X{n}", "Borne suelto: X1, X2..."),
+            _rule(
+                "XE-{string}",
+                f"Borne de entrada de la caja CD, XE-S1: {_PER_STRING}",
+                "dc_box_entry",
+            ),
+            _rule(
+                "XS-{string}", f"Borne de salida de la caja CD, XS-S1: {_PER_STRING}", "dc_box_exit"
+            ),
+        ),
+    ),
+    _TypeDef(
+        "pv_connector",
+        "Conector de CD (tipo MC4)",
+        "PVSLD_PV_CONNECTOR",
+        naming=(_rule("CX-{string}", f"CX-S1: {_PER_STRING}"),),
+    ),
 )
 """The types the engine calculates today, in palette order."""
+
+DERIVED_NAMES: tuple[DerivedName, ...] = (
+    DerivedName(
+        pattern="C-S{n}",
+        spec_section="circuits[]",
+        description_es="Circuito de la cadena S<n> al inversor (mismo número que la cadena)",
+    ),
+    DerivedName(
+        pattern="C-INV",
+        spec_section="circuits[]",
+        description_es="Circuito de la salida del inversor al ITM-1",
+    ),
+    DerivedName(
+        pattern="DCD-1",
+        spec_section="dc_bos.disconnects[]",
+        description_es="Desconectador de CD integrado en el inversor",
+    ),
+    DerivedName(
+        pattern="MOD{n}",
+        spec_section="modules[]",
+        description_es="Cada modelo de módulo distinto que usan las cadenas",
+    ),
+)
+"""Ids the engine creates itself when it builds a specification (pvsld.graph, pvsld.sizing)."""
+
+
+def next_id(pattern: str, taken: Iterable[str], *, string_id: str | None = None) -> str:
+    """The id a new part gets from its naming ``pattern`` (ENG-013).
+
+    ``{n}`` becomes the first number from 1 not already in ``taken``; ``{string}`` becomes
+    ``string_id``. A pattern with neither (``ITM-P``) is returned as it is.
+    """
+    if "{string}" in pattern:
+        if not string_id:
+            raise ValueError(f"the pattern {pattern!r} needs the id of its string")
+        return pattern.replace("{string}", string_id)
+    if "{n}" not in pattern:
+        return pattern
+    used = set(taken)
+    number = 1
+    while pattern.replace("{n}", str(number)) in used:
+        number += 1
+    return pattern.replace("{n}", str(number))
+
 
 _BY_COMPONENT_TYPE = {ct: t.type_id for t in TYPES for ct in t.component_types}
 
@@ -509,6 +648,8 @@ def _type_descriptor(definition: _TypeDef) -> TypeDescriptor:
         "spec_section": definition.spec_section,
         "id_prefix": definition.id_prefix,
         "parameters_schema": schema,
+        "naming": definition.naming,
+        "derived_fields": definition.derived_fields,
         "symbol": _symbol_model(get_symbol(definition.block), add_anchors=True),
     }
     draft = TypeDescriptor.model_construct(**fields, fingerprint="")
@@ -552,6 +693,7 @@ def build_palette(registry: ComponentRegistry | None = None) -> Palette:
         "schema_version": spec_model.SCHEMA_VERSION,
         "types": tuple(_type_descriptor(definition) for definition in TYPES),
         "equipment": _equipment(registry),
+        "derived_names": DERIVED_NAMES,
     }
     draft = Palette.model_construct(format=FORMAT, **fields, fingerprint="")
     return Palette(

@@ -86,6 +86,11 @@ class GraphCable(BaseModel):
     length_m: float | None = Field(default=None, gt=0, lt=1000)
     ambient_c: float | None = None
     size: str | None = Field(default=None, description="Conductor size, e.g. '10 AWG'")
+    raceway_trade_size_mm: float | None = Field(
+        default=None,
+        gt=0,
+        description="EMT designation (mm) of the raceway the cable runs in; default: the engine's",
+    )
 
 
 class Graph(BaseModel):
@@ -110,6 +115,7 @@ IssueCode = Literal[
     "topology",
     "unknown_component",
     "missing_value",
+    "conflict",
 ]
 
 
@@ -138,6 +144,27 @@ class FilledValue:
 
 
 @dataclass(frozen=True)
+class CircuitCables:
+    """The cables of the drawing that make up one circuit of the specification."""
+
+    id: str
+    kind: str
+    from_: str
+    to: str
+    cables: tuple[int, ...]
+    """Indices in ``graph.cables``, in the order of the path (an SPD tap is not on it)."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "from": self.from_,
+            "to": self.to,
+            "cables": list(self.cables),
+        }
+
+
+@dataclass(frozen=True)
 class GraphResult:
     """What :func:`graph_to_spec` returns; ``to_dict`` gives plain JSON types."""
 
@@ -146,6 +173,8 @@ class GraphResult:
     filled: tuple[FilledValue, ...] = ()
     mapped: dict[str, str] = field(default_factory=dict)
     """Node id -> the spec path it became (``wiring`` for junctions, terminals, connectors)."""
+    circuits: tuple[CircuitCables, ...] = ()
+    """Which cables of the drawing make up each circuit (C-S<n>, C-INV)."""
 
     @property
     def ok(self) -> bool:
@@ -158,6 +187,7 @@ class GraphResult:
             "issues": [i.to_dict() for i in self.issues],
             "filled": [f.to_dict() for f in self.filled],
             "mapped": dict(self.mapped),
+            "circuits": [c.to_dict() for c in self.circuits],
         }
 
 
@@ -264,6 +294,11 @@ class _Builder:
         self.nodes: dict[str, GraphNode] = {}
         self.group_of: dict[str, str] = {}
         self.net_cache: _Net | None = None
+        self.cable_index = {id(cable): index for index, cable in enumerate(graph.cables)}
+        self.circuit_cables: list[CircuitCables] = []
+
+    def indices(self, cables: Iterable[GraphCable]) -> tuple[int, ...]:
+        return tuple(self.cable_index[id(c)] for c in cables)
 
     # recording
     def issue(self, code: IssueCode, message: str, *ids: str) -> None:
@@ -564,7 +599,8 @@ def graph_to_spec(
         elif node.type == "dc_switch":
             disconnects.append(_device(node, b, len(disconnects)))
         elif node.type == "dc_spd":
-            entry = {"id": node_id, "at": f"{first_inverter}.dc", **node.values}
+            # "at" comes from the connections (a derived field of the palette, ENG-013).
+            entry = {**node.values, "id": node_id, "at": f"{first_inverter}.dc"}
             b.mapped[node_id] = f"dc_bos.spds[{len(spds)}]"
             spds.append(entry)
     spec["dc_bos"] = {"combiners": [], "disconnects": disconnects, "spds": spds}
@@ -590,12 +626,14 @@ def graph_to_spec(
     for node_id in b.nodes:
         if node_id not in b.mapped and not any(node_id in i.node_ids for i in b.issues):
             b.issue("topology", f"{node_id} no se pudo ubicar en la especificación.", node_id)
-    return GraphResult(spec, tuple(b.issues), tuple(b.filled), dict(b.mapped))
+    return GraphResult(
+        spec, tuple(b.issues), tuple(b.filled), dict(b.mapped), tuple(b.circuit_cables)
+    )
 
 
 def _device(node: GraphNode, b: _Builder, index: int) -> dict[str, Any]:
     b.mapped[node.id] = f"dc_bos.disconnects[{index}]"
-    return {"id": node.id, "integrated_in": None, **node.values}
+    return {**node.values, "id": node.id, "integrated_in": None}
 
 
 def _ac_side(
@@ -641,10 +679,11 @@ def _ac_side(
         itm = breakers[hit[0]]
         index = upsert(ocpds, itm)
         entry = ocpds[index]
-        entry.setdefault("role", "I1")
+        # role, backfed and at come from the connections (derived fields, ENG-013).
+        entry["role"] = "I1"
+        entry["backfed"] = True
         entry.setdefault("poles", phases)
         entry.setdefault("voltage_v", AC_BREAKER_VOLTAGE_V)
-        entry.setdefault("backfed", True)
         if inverter is not None and "rating_a" not in entry:
             rating = bos.ac_ocpd_rating_a(inverter["iac_max_a"], tables)
             choice, _found = bos.select_ac_breaker(
@@ -699,10 +738,8 @@ def _ac_side(
                 other = p.split(".", 1)[0]
                 if other in breakers and other not in inverter_breakers and other != node.id:
                     main_index = upsert(mains, breakers[other])
-                    mains[main_index].setdefault("role", "I2")
-                    panels[index].setdefault("main_ocpd", other)
-                    if panels[index].get("main_ocpd") != other:
-                        panels[index]["main_ocpd"] = other
+                    mains[main_index]["role"] = "I2"
+                    panels[index]["main_ocpd"] = other
                     b.mapped[other] = f"ac_bos.main_breakers[{main_index}]"
     for node in (n for n in b.nodes.values() if n.type == "meter"):
         index = upsert(meters, node)
@@ -746,6 +783,24 @@ def _circuits(
     strings = spec["strings"]
     modules = {m["id"]: m for m in spec["modules"]}
     t_amb = site.t_amb_max_c if site else None
+    # The strings share one DC raceway (owned by C-S1): a size drawn on any of their cables.
+    drawn = sorted(
+        {
+            c.raceway_trade_size_mm
+            for string in strings
+            for c in string_paths[string["id"]]
+            if c.raceway_trade_size_mm is not None
+        }
+    )
+    if len(drawn) > 1:
+        b.issue(
+            "conflict",
+            "Las cadenas comparten la tubería de CD, pero sus cables traen tamaños distintos ("
+            + ", ".join(f"{size:g} mm" for size in drawn)
+            + f"); se usa el mayor, {drawn[-1]:g} mm.",
+            *(s["id"] for s in strings),
+        )
+    dc_trade_size = drawn[-1] if drawn else None
     for index, string in enumerate(strings):
         path = string_paths[string["id"]]
         cid = f"C-S{index + 1}"
@@ -819,6 +874,8 @@ def _circuits(
                 "Separación sobre el techo por omisión del motor.",
             )
             area = calc.conductor_area_mm2(cable.outer_diameter_mm) if cable else None
+            if dc_trade_size is not None:
+                circuit["raceway"]["trade_size_mm"] = dc_trade_size
             raceway, _issues = bos.size_raceway(
                 circuit_id=cid,
                 conductors=2 * n_strings,
@@ -829,7 +886,7 @@ def _circuits(
                 tables=tables,
                 cable=cable,
             )
-            if raceway.trade_size_mm is not None:
+            if dc_trade_size is None and raceway.trade_size_mm is not None:
                 circuit["raceway"]["trade_size_mm"] = b.fill(
                     f"circuits[{len(circuits)}].raceway.trade_size_mm",
                     raceway.trade_size_mm,
@@ -838,6 +895,9 @@ def _circuits(
         else:
             circuit["raceway"] = {"ref": "C-S1"}
         circuits.append(circuit)
+        b.circuit_cables.append(
+            CircuitCables(cid, "pv_source", circuit["from"], circuit["to"], b.indices(path))
+        )
 
     ac = spec.get("ac_bos") or {}
     itm_id = (ac.get("point_of_connection") or {}).get("breaker")
@@ -906,6 +966,19 @@ def _circuits(
         if ambient is not None:
             circuit["ambient_c"] = ambient
         thhw = calc.insulated_area_mm2(size, bos.AC_INSULATION, None, tables)
+        ac_drawn = sorted(
+            {c.raceway_trade_size_mm for c in path if c.raceway_trade_size_mm is not None}
+        )
+        if len(ac_drawn) > 1:
+            b.issue(
+                "conflict",
+                "Los cables de C-INV traen tamaños de tubería distintos ("
+                + ", ".join(f"{size:g} mm" for size in ac_drawn)
+                + f"); se usa el mayor, {ac_drawn[-1]:g} mm.",
+                inverter["id"],
+            )
+        if ac_drawn:
+            circuit["raceway"]["trade_size_mm"] = ac_drawn[-1]
         raceway, _issues = bos.size_raceway(
             circuit_id="C-INV",
             conductors=phases + 1,
@@ -915,13 +988,16 @@ def _circuits(
             insulation=bos.AC_INSULATION,
             tables=tables,
         )
-        if raceway.trade_size_mm is not None:
+        if not ac_drawn and raceway.trade_size_mm is not None:
             circuit["raceway"]["trade_size_mm"] = b.fill(
                 f"circuits[{index}].raceway.trade_size_mm",
                 raceway.trade_size_mm,
                 "EMT más chico que aloja los conductores (Capítulo 10, Tabla 1).",
             )
         circuits.append(circuit)
+        b.circuit_cables.append(
+            CircuitCables("C-INV", "inverter_output", circuit["from"], itm_id, b.indices(path))
+        )
     spec["circuits"] = circuits
 
 
@@ -935,6 +1011,7 @@ def _inverter_path(b: _Builder, inverter_id: str, itm_id: str) -> list[GraphCabl
 
 __all__ = [
     "FORMAT",
+    "CircuitCables",
     "FilledValue",
     "Graph",
     "GraphCable",

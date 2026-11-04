@@ -249,3 +249,56 @@ def test_capabilities_document(capsys) -> None:
     assert statuses["dc_box"] == "supported"
     assert main(["capabilities", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["format"] == "pvsld.capabilities/1"
+
+
+def test_derived_fields_come_from_the_cables(graph, template, registry) -> None:
+    graph["nodes"][0]["values"]["mppt"] = "B"  # S1 is wired to A
+    graph["nodes"][4]["values"] = {"role": "I2", "backfed": False, "at": "X"}  # ITM-1
+    result = graph_to_spec(graph, template, registry=registry)
+    assert result.spec["strings"][0]["mppt"] == "A"
+    itm = result.spec["ac_bos"]["ocpds"][0]
+    assert (itm["role"], itm["backfed"], itm["at"]) == ("I1", True, "CC-1")
+
+
+def test_circuits_list_their_cables_in_path_order(graph, template, registry) -> None:
+    result = graph_to_spec(graph, template, registry=registry)
+    by_id = {c.id: c for c in result.circuits}
+    assert list(by_id) == ["C-S1", "C-S2", "C-INV"]
+    s1 = by_id["C-S1"]
+    assert (s1.kind, s1.from_, s1.to) == ("pv_source", "S1", "INV1.A")
+    ends = [(graph["cables"][i]["from"], graph["cables"][i]["to"]) for i in s1.cables]
+    assert ends[0] == ("S1.OUT", "CX-S1.IN")
+    assert ends[-1] == ("XS-S1.R", "INV1.A")
+    assert all("DPS" not in a and "DPS" not in b for a, b in ends)  # the SPD tap is not on it
+    inv = by_id["C-INV"]
+    assert [graph["cables"][i]["from"] for i in inv.cables] == ["INV1.AC"]
+    assert result.to_dict()["circuits"][0]["cables"] == list(s1.cables)
+
+
+def test_drawn_raceway_is_kept_and_checked(graph, template, registry) -> None:
+    for cable in graph["cables"]:
+        if cable["to"] in ("INV1.A", "INV1.B"):
+            cable["raceway_trade_size_mm"] = 16  # too small for four 8 AWG PV conductors
+        if cable["from"] == "INV1.AC":
+            cable["raceway_trade_size_mm"] = 27
+    result = graph_to_spec(graph, template, registry=registry)
+    circuits = {c["id"]: c for c in result.spec["circuits"]}
+    assert circuits["C-S1"]["raceway"]["trade_size_mm"] == 16
+    assert circuits["C-INV"]["raceway"]["trade_size_mm"] == 27
+    paths = {f.path for f in result.filled}
+    assert "circuits[0].raceway.trade_size_mm" not in paths
+    assert "circuits[2].raceway.trade_size_mm" not in paths
+    report = evaluate_choices(result.spec, ["C-S1.raceway.trade_size_mm"], registry=registry)
+    check = next(c for c in report.checks if c.target == "C-S1.raceway.trade_size_mm")
+    assert (check.ok, check.rule_id, check.locked) == (False, "CON-006", True)
+
+
+def test_shared_dc_raceway_with_different_sizes(graph, template, registry) -> None:
+    for cable in graph["cables"]:
+        if cable["to"] == "INV1.A":
+            cable["raceway_trade_size_mm"] = 35
+        if cable["to"] == "INV1.B":
+            cable["raceway_trade_size_mm"] = 41
+    result = graph_to_spec(graph, template, registry=registry)
+    assert ("conflict", ("S1", "S2")) in _codes(result)
+    assert result.spec["circuits"][0]["raceway"]["trade_size_mm"] == 41
