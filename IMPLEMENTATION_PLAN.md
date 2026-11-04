@@ -824,7 +824,7 @@ format; the DC box is a group node; missing lengths take the engine's defaults.
 evaluate_choices proposes nothing; the MPPT follows the cable; broken drawings name their nodes;
 a third string is kept and flagged unsupported.
 **Tests**: tests/test_graph.py.
-**Status**: In Progress (PR open)
+**Status**: Complete (PR #58)
 
 ---
 

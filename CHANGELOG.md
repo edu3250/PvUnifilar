@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Rule ids aligned with the vault catalogue: AC breaker interrupting ratings report OCP-006 (was OCP-003), the box disconnect's ratings DIS-002 (was DIS-001), and a string protection's voltage or breaking capacity OCP-004 (was OCP-002; its current window stays OCP-002). DIS-001 keeps its meaning, a missing DC disconnect.
 - Suntree SL7N-63 DC breaker record updated from the newer catalogue pages (2026-11-03): Ue options per pole count, mechanical and electrical life, certificates, and the breaking capacity read as 6 kA except 2 kA at 2P 800 V and 4P 1200 V (the earlier record had it inverted; no PV design changes, string faults are far below 2 kA).
 - `pvsld.sizing.bos`: the check of each device (gPV fuse, DC breaker, box switch, AC breaker) is split from its selection (`fuse_problem`, `breaker_fit`, `box_switch_problem`, `ac_breaker_problem`, `fuse_for`, `breaker_for`), so sizing and `evaluate_choices` use the same criteria. Selections are unchanged.
 - `import pvsld.sizing` no longer loads ezdxf: the spec-file reader moved to `pvsld.specfile` (still re-exported by `pvsld.service`). This cuts about 3 s from an on-device start (Pyodide, ENG-014).
