@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `GraphResult.circuits`: the cables of the drawing that make up each circuit, in path order (ENG-003c). `GraphCable.raceway_trade_size_mm`: the user can draw the EMT size of a circuit; it is kept and checked (CON-006). Different sizes on the strings' shared DC raceway give a `conflict` issue and the largest size.
 - Palette naming rules and derived fields (ENG-013): each type gives `naming` (patterns with `{n}`, the first free number, or `{string}`, the string the part belongs to) and `derived_fields` (values that come from the connections); the palette lists `derived_names` (C-S<n>, C-INV, DCD-1, MOD<n>), and `pvsld.palette.next_id` applies a rule. `graph_to_spec` lets the connections win over a drawn value of a derived field.
 
 ## [0.7.0] - 2026-11-03

@@ -837,6 +837,18 @@ point of connection's panel and breaker); the palette lists the ids the engine c
 editor session approved by the owner 2026-11-03; ids that do not follow a rule are accepted (no
 new warning), except the box parts already checked against their string.
 **Tests**: tests/test_palette_naming.py; tests/test_graph.py.
+**Status**: Complete (PR #61)
+
+#### Stage 3.8.7: ENG-003c circuit cables and drawn raceways
+**Goal**: `GraphResult.circuits` says which cables of the drawing make up each circuit
+(`{id, kind, from, to, cables}`, indices in `graph.cables` in path order; an SPD tap is not on
+it), so the editor shows a circuit's checks on its cables and turns "fix this cable's size" into
+the circuit's lock without engine internals. `GraphCable.raceway_trade_size_mm` lets the user
+draw the EMT size; it is kept as given and checked by CON-006, and without it the engine's size
+appears in `filled` as before. Owner answers 2026-11-03: no raceway type yet (the engine
+calculates EMT only); when the strings' cables give different sizes for their shared DC raceway,
+a `conflict` issue and the largest size.
+**Tests**: tests/test_graph.py.
 **Status**: In Progress (PR open)
 
 ---
