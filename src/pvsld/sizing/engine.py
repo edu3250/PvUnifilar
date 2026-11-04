@@ -26,6 +26,7 @@ from pvsld.catalogue import (
     ComponentRegistry,
     DcBreaker,
     DcFuse,
+    DcSpd,
     DcSwitch,
     UnknownComponentError,
 )
@@ -436,6 +437,7 @@ def _build_spec(
     evaluation: Evaluation,
     bos_spec: BosSpec,
     standards: Standards,
+    spds: Sequence[DcSpd] = (),
 ) -> dict[str, Any]:
     config, metrics = evaluation.config, evaluation.metrics
     routing, utility = request.routing, request.utility
@@ -524,7 +526,21 @@ def _build_spec(
             }
         )
     dc_bos = spec.get("dc_bos") or {}
-    spec["dc_bos"] = {"combiners": [], "spds": dc_bos.get("spds", []), "disconnects": disconnects}
+    box_spds = [dict(spd) for spd in dc_bos.get("spds", [])]
+    if dc_ocpd.device_id is not None:
+        # The box SPD comes from the catalogue, as in pvsld.sizing.dcbox (owner 2026-10-30).
+        need = bos.spd_need(metrics.voc_cold_string_v, config.n_strings * metrics.isc_design_a)
+        chosen_spd = bos.spd_for(need, spds)
+        for entry in box_spds:
+            if chosen_spd is not None and str(entry.get("id", "")).startswith("DPS-CD"):
+                entry.update(
+                    spd_type=chosen_spd.spd_type,
+                    ucpv_v=chosen_spd.ucpv_v,
+                    in_ka=chosen_spd.in_ka,
+                    iscpv_a=chosen_spd.iscpv_ka * 1000,
+                    model=chosen_spd.component_id,
+                )
+    spec["dc_bos"] = {"combiners": [], "spds": box_spds, "disconnects": disconnects}
 
     ac_bos = spec["ac_bos"]
     itm_id = ac_bos["point_of_connection"]["breaker"]
@@ -756,6 +772,7 @@ def size_pv_system(request: SizingRequest, registry: ComponentRegistry) -> Sizin
             evaluation=evaluation,
             bos_spec=bos_spec,
             standards=standards,
+            spds=registry.dc_spds(),
         )
         report = validate_pv_design(spec, dc_ac_policy=request.dc_ac_policy)
         if not report.ok:

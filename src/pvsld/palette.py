@@ -411,7 +411,14 @@ TYPES: tuple[_TypeDef, ...] = (
         component_types=("dc_switch",),
         spec_section="dc_bos.disconnects[]",
         spec_model_name="DcDisconnect",
-        naming=(_rule("DCD-CD{n}", "Seccionador de la caja de protecciones CD: DCD-CD1"),),
+        naming=(
+            _rule("DCD-CD{n}", "Seccionador de la caja de protecciones CD: DCD-CD1"),
+            _rule(
+                "DCD-{string}",
+                f"Seccionador de 2 polos de la caja por cadena, DCD-S1: {_PER_STRING}",
+                "dc_box_per_string",
+            ),
+        ),
         derived_fields=("integrated_in",),
     ),
     _TypeDef(
@@ -421,7 +428,14 @@ TYPES: tuple[_TypeDef, ...] = (
         component_types=("dc_spd",),
         spec_section="dc_bos.spds[]",
         spec_model_name="Spd",
-        naming=(_rule("DPS-CD{n}", "DPS de la caja de protecciones CD: DPS-CD1"),),
+        naming=(
+            _rule("DPS-CD{n}", "DPS de la caja de protecciones CD: DPS-CD1"),
+            _rule(
+                "DPS-{string}",
+                f"DPS de la caja por cadena, DPS-S1: {_PER_STRING}",
+                "dc_box_per_string",
+            ),
+        ),
         derived_fields=("at",),
     ),
     _TypeDef(
