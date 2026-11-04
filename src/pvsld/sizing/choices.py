@@ -18,20 +18,21 @@ conductors), so after applying some, evaluate again.
 
 **Values covered** (the template ``bt_string_residential_v1``: one inverter, up to two strings):
 
-==================  ==========================================  =========
+==================  ==========================================  ================
 Component           Values                                      Rule
-==================  ==========================================  =========
-``FUS-*``/``DCB-*`` ``model``, ``ie_a``, ``ue_v``               OCP-002
-``DCD-CD1``         ``model``, ``ie_a``, ``ue_v``, ``poles``    DIS-001
-ITM-1 (PCC breaker) ``model``, ``rating_a``, ``kaic_ka``        OCP-005, OCP-003
-``main_breakers``   ``model``, ``kaic_ka``                      OCP-003
+==================  ==========================================  ================
+``FUS-*``/``DCB-*`` ``ie_a`` (and ``model``); ``ue_v``             OCP-002; OCP-004
+``DCD-CD1``         ``model``, ``ie_a``, ``ue_v``, ``poles``    DIS-002
+ITM-1 (PCC breaker) ``rating_a``; ``model``, ``kaic_ka``        OCP-005; OCP-006
+``main_breakers``   ``model``, ``kaic_ka``                      OCP-006
 circuits            ``conductors.size`` (+ ``egc``, ``neutral``) CON-002, VD-001/002
 raceways            ``raceway.trade_size_mm``                   CON-006
-==================  ==========================================  =========
+==================  ==========================================  ================
 
-The rule ids are those the sizing engine already reports, so the plugin and the editor say the
-same thing; ITM-1's rating, which sizing computes and never reports, uses OCP-005 of the vault
-catalogue (lower bound only: the inverter's maximum OCPD is not checked, owner decision).
+The rule ids follow the vault catalogue (aligned 2026-11-03): OCP-002 is the string protection's
+current window, OCP-004 its voltage and breaking capacity, OCP-005 ITM-1's rating (lower bound
+only: the inverter's maximum OCPD is not checked, owner decision), OCP-006 interrupting ratings,
+DIS-002 the ratings of the box disconnect.
 The rest of the design (string voltages, the inverter, the AC side rules) is the rule pack's:
 :attr:`ChoiceReport.draft` carries its findings.
 """
@@ -363,11 +364,11 @@ class _Evaluator:
                 device.id,
                 "ue_v",
                 device.ue_v,
-                rule_id="OCP-002",
+                rule_id="OCP-004",
                 problem=None
                 if device.ue_v >= need.voc_cold_v
                 else (
-                    "OCP-002",
+                    "OCP-004",
                     Severity.ERROR,
                     f"{device.id}: {_g(device.ue_v)} V es menor que el Voc en frío de la cadena "
                     f"({_n(need.voc_cold_v)} V).",
@@ -385,7 +386,10 @@ class _Evaluator:
             return "OCP-002", Severity.WARNING, f"{missing}."
         why = bos.fuse_problem(device, need) if kind is DcFuse else bos.breaker_fit(device, need)[0]
         if why is not None:
-            return "OCP-002", Severity.ERROR, f"{model} no protege la cadena: {why}."
+            # The current window is OCP-002; the voltage and the breaking capacity are OCP-004.
+            in_window = bos.string_rating_problem(device.rated_current_a, need) is not None
+            rule = "OCP-002" if in_window else "OCP-004"
+            return rule, Severity.ERROR, f"{model} no protege la cadena: {why}."
         if device.rated_current_a != ie_a:
             return (
                 "OCP-002",
@@ -434,12 +438,12 @@ class _Evaluator:
                 )
                 if why_not is not None:
                     severity = Severity.WARNING if switch is None else Severity.ERROR
-                    problem = ("DIS-001", severity, f"{BOX_SWITCH_ID}: {why_not}.")
+                    problem = ("DIS-002", severity, f"{BOX_SWITCH_ID}: {why_not}.")
             self.record(
                 BOX_SWITCH_ID,
                 "model",
                 device.model,
-                rule_id="DIS-001",
+                rule_id="DIS-002",
                 problem=problem,
                 ok_es=f"{BOX_SWITCH_ID}: {device.model} abre las cadenas.",
                 proposed=choice.device_id if choice else None,
@@ -450,11 +454,11 @@ class _Evaluator:
             BOX_SWITCH_ID,
             "ie_a",
             device.ie_a,
-            rule_id="DIS-001",
+            rule_id="DIS-002",
             problem=None
             if device.ie_a >= i_max
             else (
-                "DIS-001",
+                "DIS-002",
                 Severity.ERROR,
                 f"{BOX_SWITCH_ID}: {_g(device.ie_a)} A es menor que la corriente máxima de la "
                 f"cadena ({_n(i_max)} A, 1.25 × Isc).",
@@ -467,11 +471,11 @@ class _Evaluator:
             BOX_SWITCH_ID,
             "ue_v",
             device.ue_v,
-            rule_id="DIS-001",
+            rule_id="DIS-002",
             problem=None
             if device.ue_v >= voc
             else (
-                "DIS-001",
+                "DIS-002",
                 Severity.ERROR,
                 f"{BOX_SWITCH_ID}: {_g(device.ue_v)} V es menor que el Voc en frío ({_n(voc)} V).",
             ),
@@ -483,11 +487,11 @@ class _Evaluator:
             BOX_SWITCH_ID,
             "poles",
             device.poles,
-            rule_id="DIS-001",
+            rule_id="DIS-002",
             problem=None
             if device.poles >= poles
             else (
-                "DIS-001",
+                "DIS-002",
                 Severity.ERROR,
                 f"{BOX_SWITCH_ID}: {device.poles} polos no abren {n_strings} cadena(s); se "
                 f"requieren {poles}.",
@@ -512,7 +516,7 @@ class _Evaluator:
     ) -> Problem | None:
         breaker, missing = self.lookup(model, AcBreaker)
         if breaker is None:
-            return "OCP-003", Severity.WARNING, f"{position}: {missing}."
+            return "OCP-006", Severity.WARNING, f"{position}: {missing}."
         why = bos.ac_breaker_problem(
             breaker,
             rating_a=rating_a,
@@ -522,10 +526,10 @@ class _Evaluator:
             exact=exact,
         )
         if why is not None:
-            return "OCP-003", Severity.ERROR, f"{position}: {model} no cumple: {why}."
+            return "OCP-006", Severity.ERROR, f"{position}: {model} no cumple: {why}."
         if breaker.rated_current_a != drawn_a:
             return (
-                "OCP-003",
+                "OCP-006",
                 Severity.WARNING,
                 f"{position}: {model} es de {_g(breaker.rated_current_a)} A, pero el diagrama dice "
                 f"{_g(drawn_a)} A.",
@@ -567,7 +571,7 @@ class _Evaluator:
                 position,
                 "model",
                 ocpd.model,
-                rule_id="OCP-003",
+                rule_id="OCP-006",
                 problem=None
                 if ocpd.model is None
                 else self._ac_model_problem(
@@ -605,7 +609,7 @@ class _Evaluator:
             position,
             "kaic_ka",
             ocpd.kaic_ka,
-            rule_id="OCP-003",
+            rule_id="OCP-006",
             problem=self._kaic_problem(position, ocpd.kaic_ka, fault),
             ok_es=f"{position}: {_g(ocpd.kaic_ka)} kA >= {_g(fault)} kA de falla.",
             proposed=choice.interrupting_ka if choice else None,
@@ -617,7 +621,7 @@ class _Evaluator:
         if kaic_ka >= fault_ka:
             return None
         return (
-            "OCP-003",
+            "OCP-006",
             Severity.ERROR,
             f"{position}: {_g(kaic_ka)} kA es menor que la corriente de falla disponible "
             f"({_g(fault_ka)} kA, NOM 110-9).",
@@ -648,7 +652,7 @@ class _Evaluator:
                     main.id,
                     "model",
                     main.model,
-                    rule_id="OCP-003",
+                    rule_id="OCP-006",
                     problem=None
                     if main.model is None
                     else self._ac_model_problem(
@@ -670,7 +674,7 @@ class _Evaluator:
                     main.id,
                     "kaic_ka",
                     main.kaic_ka,
-                    rule_id="OCP-003",
+                    rule_id="OCP-006",
                     problem=None
                     if main.kaic_ka is None
                     else self._kaic_problem(main.id, main.kaic_ka, fault),

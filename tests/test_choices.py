@@ -133,7 +133,7 @@ def test_small_itm_fails_ocp_005(spec, registry) -> None:
 def test_low_interrupting_rating_fails(spec, registry) -> None:
     _device(spec, "ITM-P").update(kaic_ka=5)
     check = _check(_evaluate(spec, registry, "ITM-P"), "ITM-P.kaic_ka")
-    assert (check.ok, check.rule_id, check.suggested) == (False, "OCP-003", 10.0)
+    assert (check.ok, check.rule_id, check.suggested) == (False, "OCP-006", 10.0)
 
 
 def test_model_that_does_not_fit_is_an_error(spec, registry) -> None:
@@ -160,7 +160,7 @@ def test_box_switch_with_too_few_poles_fails(spec, registry) -> None:
     _device(spec, "DCD-CD1")["poles"] = 2
     report = _evaluate(spec, registry)
     check = _check(report, "DCD-CD1.poles")
-    assert (check.ok, check.rule_id) == (False, "DIS-001")
+    assert (check.ok, check.rule_id) == (False, "DIS-002")
     assert _targets(report.updates)["DCD-CD1.poles"] == (2, 4)
 
 
@@ -231,3 +231,14 @@ def test_report_is_plain_data(spec, registry) -> None:
 
 def test_the_bundled_catalogue_is_the_default(spec) -> None:
     assert evaluate_choices(spec).updates == ()
+
+
+def test_low_voltage_protection_is_ocp_004(spec, registry) -> None:
+    _device(spec, "FUS-S1").update(ue_v=100, model=None)
+    check = _check(_evaluate(spec, registry), "FUS-S1.ue_v")
+    assert (check.ok, check.rule_id) == (False, "OCP-004")
+
+
+def test_current_window_stays_ocp_002_and_voltage_is_ocp_004(spec, registry) -> None:
+    _device(spec, "FUS-S1")["model"] = "LITTELFUSE-SPF015"  # 15 A: below the window
+    assert _check(_evaluate(spec, registry), "FUS-S1.model").rule_id == "OCP-002"

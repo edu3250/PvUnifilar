@@ -506,7 +506,7 @@ def select_ac_breaker(
         why = f"ningún interruptor de {poles} polos y {_g(rating_a)} A en el catálogo"
     return None, [
         Issue(
-            "OCP-003",
+            "OCP-006",
             Severity.WARNING,
             f"{position}: {why}; el kAIC queda igual a la corriente de falla del servicio.",
             subject=position,
@@ -572,7 +572,7 @@ def select_box_switch(
     if not candidates:
         return None, [
             Issue(
-                "DIS-001",
+                "DIS-002",
                 Severity.WARNING,
                 f"{position}: ningún seccionador del catálogo abre {n_strings} cadena(s) de "
                 f"{_n(string_i_max_a)} A a {_n(voc_cold_string_v)} V; se toman los valores de la "
