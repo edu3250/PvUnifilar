@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-03
+
 ### Added
 
 - `pvsld.graph.graph_to_spec`: the editor's drawing (`pvsld.graph/1`: nodes from the palette, cables port to port, the DC box as a group node) becomes a specification (ENG-003). Each string's inverter and MPPT, the circuits and their lengths, the box parts and the AC chain come from the cables; values not drawn take the engine's defaults or selection and are listed as filled; every node is mapped or reported.
