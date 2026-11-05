@@ -39,6 +39,7 @@ The rest of the design (string voltages, the inverter, the AC side rules) is the
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -48,6 +49,7 @@ from pvsld.catalogue import (
     ComponentRegistry,
     DcBreaker,
     DcFuse,
+    DcSpd,
     DcSwitch,
     UnknownComponentError,
 )
@@ -165,6 +167,9 @@ class ChoiceReport:
             "draft": self.draft.to_dict(),
         }
 
+
+_PER_STRING_PART = re.compile(r"^(DCD|DPS)-(S\d+)$")
+"""A part of a per-string DC box: DCD-<string> or DPS-<string>."""
 
 Problem = tuple[str, Severity, str]
 """(rule id, severity, Spanish message) of a value that fails."""
@@ -402,23 +407,33 @@ class _Evaluator:
     # --- box disconnect --------------------------------------------------------------------
 
     def box_switch(self) -> None:
-        device = next((d for d in self.spec.dc_bos.disconnects if d.id == BOX_SWITCH_ID), None)
-        strings = self.derived.strings
-        if device is None or not strings:
+        """The box disconnect: DCD-CD1 for every string, or DCD-<string> for its own string."""
+        strings = {s.string_id: s for s in self.derived.strings}
+        if not strings:
             return
+        for device in self.spec.dc_bos.disconnects:
+            if device.id == BOX_SWITCH_ID:
+                self._switch(device, list(strings.values()), None)
+            elif (match := _PER_STRING_PART.match(device.id)) and match.group(1) == "DCD":
+                string = strings.get(match.group(2))
+                if string is not None:
+                    self._switch(device, [string], bos.STRING_SWITCH_POLES)
+
+    def _switch(self, device: Any, strings: list[Any], poles_per_string: int | None) -> None:
         n_strings = len(strings)
         voc = max(s.voc_max_string_v for s in strings)
         i_max = max(calc.ISC_SAFETY_FACTOR * s.isc_a for s in strings)
-        poles = bos.box_switch_poles_per_string(n_strings) * n_strings
+        poles = bos.box_switch_poles_per_string(n_strings, poles_per_string) * n_strings
         choice, found = bos.select_box_switch(
-            position=BOX_SWITCH_ID,
+            position=device.id,
             n_strings=n_strings,
             voc_cold_string_v=voc,
             string_i_max_a=i_max,
             switches=self.registry.dc_switches(),
+            poles_per_string=poles_per_string,
         )
         for issue in found:
-            self.note(BOX_SWITCH_ID, issue)
+            self.note(device.id, issue)
         why = (
             f"El seccionador más chico del catálogo para {n_strings} cadena(s): "
             f"{choice.device_id} ({_g(choice.rating_a)} A a {_g(choice.voltage_v)} V)."
@@ -433,25 +448,29 @@ class _Evaluator:
                     missing
                     if switch is None
                     else bos.box_switch_problem(
-                        switch, n_strings=n_strings, voc_cold_string_v=voc, string_i_max_a=i_max
+                        switch,
+                        n_strings=n_strings,
+                        voc_cold_string_v=voc,
+                        string_i_max_a=i_max,
+                        poles_per_string=poles_per_string,
                     )
                 )
                 if why_not is not None:
                     severity = Severity.WARNING if switch is None else Severity.ERROR
-                    problem = ("DIS-002", severity, f"{BOX_SWITCH_ID}: {why_not}.")
+                    problem = ("DIS-002", severity, f"{device.id}: {why_not}.")
             self.record(
-                BOX_SWITCH_ID,
+                device.id,
                 "model",
                 device.model,
                 rule_id="DIS-002",
                 problem=problem,
-                ok_es=f"{BOX_SWITCH_ID}: {device.model} abre las cadenas.",
+                ok_es=f"{device.id}: {device.model} abre las cadenas.",
                 proposed=choice.device_id if choice else None,
                 why_es=why,
                 check=device.model is not None,
             )
         self.record(
-            BOX_SWITCH_ID,
+            device.id,
             "ie_a",
             device.ie_a,
             rule_id="DIS-002",
@@ -460,15 +479,15 @@ class _Evaluator:
             else (
                 "DIS-002",
                 Severity.ERROR,
-                f"{BOX_SWITCH_ID}: {_g(device.ie_a)} A es menor que la corriente máxima de la "
+                f"{device.id}: {_g(device.ie_a)} A es menor que la corriente máxima de la "
                 f"cadena ({_n(i_max)} A, 1.25 × Isc).",
             ),
-            ok_es=f"{BOX_SWITCH_ID}: {_g(device.ie_a)} A >= {_n(i_max)} A (1.25 × Isc).",
+            ok_es=f"{device.id}: {_g(device.ie_a)} A >= {_n(i_max)} A (1.25 × Isc).",
             proposed=choice.rating_a if choice else None,
             why_es=why,
         )
         self.record(
-            BOX_SWITCH_ID,
+            device.id,
             "ue_v",
             device.ue_v,
             rule_id="DIS-002",
@@ -477,14 +496,14 @@ class _Evaluator:
             else (
                 "DIS-002",
                 Severity.ERROR,
-                f"{BOX_SWITCH_ID}: {_g(device.ue_v)} V es menor que el Voc en frío ({_n(voc)} V).",
+                f"{device.id}: {_g(device.ue_v)} V es menor que el Voc en frío ({_n(voc)} V).",
             ),
-            ok_es=f"{BOX_SWITCH_ID}: {_g(device.ue_v)} V >= Voc en frío ({_n(voc)} V).",
+            ok_es=f"{device.id}: {_g(device.ue_v)} V >= Voc en frío ({_n(voc)} V).",
             proposed=choice.voltage_v if choice else None,
             why_es=why,
         )
         self.record(
-            BOX_SWITCH_ID,
+            device.id,
             "poles",
             device.poles,
             rule_id="DIS-002",
@@ -493,13 +512,119 @@ class _Evaluator:
             else (
                 "DIS-002",
                 Severity.ERROR,
-                f"{BOX_SWITCH_ID}: {device.poles} polos no abren {n_strings} cadena(s); se "
+                f"{device.id}: {device.poles} polos no abren {n_strings} cadena(s); se "
                 f"requieren {poles}.",
             ),
-            ok_es=f"{BOX_SWITCH_ID}: {device.poles} polos para {n_strings} cadena(s).",
+            ok_es=f"{device.id}: {device.poles} polos para {n_strings} cadena(s).",
             proposed=choice.poles if choice else None,
             why_es=why,
         )
+
+    # --- DC surge protective devices --------------------------------------------------------
+
+    def spds(self) -> None:
+        """Each SPD of the box: DPS-CD1 protects every string, DPS-<string> its own string."""
+        strings = {s.string_id: s for s in self.derived.strings}
+        if not strings:
+            return
+        for spd in self.spec.dc_bos.spds:
+            match = _PER_STRING_PART.match(spd.id)
+            if match and match.group(1) == "DPS":
+                members = [strings[match.group(2)]] if match.group(2) in strings else []
+            elif spd.id.startswith("DPS-CD"):
+                members = list(strings.values())
+            else:
+                continue
+            if members:
+                self._spd(spd, members)
+
+    def _spd(self, spd: Any, strings: list[Any]) -> None:
+        voc = max(s.voc_max_string_v for s in strings)
+        need = bos.spd_need(voc, sum(s.isc_a for s in strings))
+        choice = bos.spd_for(need, self.registry.dc_spds())
+        why = (
+            f"El DPS del catálogo para {', '.join(s.string_id for s in strings)}: "
+            f"{choice.component_id} (U_CPV {_g(choice.ucpv_v)} V, In {_g(choice.in_ka)} kA)."
+            if choice
+            else ""
+        )
+        model_problem: Problem | None = None
+        if spd.model is not None:
+            found, missing = self.lookup(spd.model, DcSpd)
+            if found is None:
+                model_problem = ("SPD-002", Severity.WARNING, f"{spd.id}: {missing}.")
+            elif (why_not := bos.spd_problem(found, need)) is not None:
+                rule = re.search(r"SPD-00\d", why_not)
+                model_problem = (
+                    rule.group(0) if rule else "SPD-002",
+                    Severity.ERROR,
+                    f"{spd.id}: {spd.model} no cumple: {why_not}.",
+                )
+        self.record(
+            spd.id,
+            "model",
+            spd.model,
+            rule_id="SPD-002",
+            problem=model_problem,
+            ok_es=f"{spd.id}: {spd.model} cumple.",
+            proposed=choice.component_id if choice else None,
+            why_es=why,
+            check=spd.model is not None,
+        )
+        if spd.ucpv_v is not None or choice is not None:
+            self.record(
+                spd.id,
+                "ucpv_v",
+                spd.ucpv_v,
+                rule_id="SPD-002",
+                problem=None
+                if spd.ucpv_v is None or spd.ucpv_v >= need.ucpv_min_v
+                else (
+                    "SPD-002",
+                    Severity.ERROR,
+                    f"{spd.id}: U_CPV {_g(spd.ucpv_v)} V es menor que el Voc en frío "
+                    f"({_n(need.ucpv_min_v)} V).",
+                ),
+                ok_es=f"{spd.id}: U_CPV {_g(spd.ucpv_v or 0)} V >= {_n(need.ucpv_min_v)} V.",
+                proposed=choice.ucpv_v if choice else None,
+                why_es=why,
+                check=spd.ucpv_v is not None,
+            )
+        self.record(
+            spd.id,
+            "in_ka",
+            spd.in_ka,
+            rule_id="SPD-003",
+            problem=None
+            if spd.in_ka >= need.in_min_ka
+            else (
+                "SPD-003",
+                Severity.WARNING,
+                f"{spd.id}: In {_g(spd.in_ka)} kA es menor que {_g(need.in_min_ka)} kA (clase II).",
+            ),
+            ok_es=f"{spd.id}: In {_g(spd.in_ka)} kA >= {_g(need.in_min_ka)} kA.",
+            proposed=choice.in_ka if choice else None,
+            why_es=why,
+        )
+        if spd.iscpv_a is not None or choice is not None:
+            self.record(
+                spd.id,
+                "iscpv_a",
+                spd.iscpv_a,
+                rule_id="SPD-004",
+                problem=None
+                if spd.iscpv_a is None or spd.iscpv_a >= need.iscpv_min_a
+                else (
+                    "SPD-004",
+                    Severity.ERROR,
+                    f"{spd.id}: I_SCPV {_g(spd.iscpv_a)} A es menor que 1.25 × Isc "
+                    f"({_n(need.iscpv_min_a)} A).",
+                ),
+                ok_es=f"{spd.id}: I_SCPV {_g(spd.iscpv_a or 0)} A >= {_n(need.iscpv_min_a)} A.",
+                proposed=choice.iscpv_ka * 1000 if choice else None,
+                why_es=why,
+                check=spd.iscpv_a is not None,
+            )
 
     # --- AC breakers -----------------------------------------------------------------------
 
@@ -868,6 +993,7 @@ def evaluate_choices(
     )
     evaluator.string_protections()
     evaluator.box_switch()
+    evaluator.spds()
     evaluator.itm()
     evaluator.mains()
     evaluator.conductors()

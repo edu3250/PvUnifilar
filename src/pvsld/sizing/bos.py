@@ -514,32 +514,49 @@ def select_ac_breaker(
     ]
 
 
-def box_switch_poles_per_string(n_strings: int) -> int:
-    """Poles each string goes through: two, or four in series for a single string."""
+STRING_SWITCH_POLES = 2
+"""Poles of a per-string box disconnect: both conductors of its string (690-15(d))."""
+
+
+def box_switch_poles_per_string(n_strings: int, poles_per_string: int | None = None) -> int:
+    """Poles each string goes through: two, or four in series for a single string.
+
+    ``poles_per_string`` overrides it (the per-string box opens its string through two poles).
+    """
+    if poles_per_string is not None:
+        return poles_per_string
     return 4 if n_strings == 1 else 2
 
 
 def box_switch_rating(
-    switch: DcSwitch, n_strings: int, voc_cold_string_v: float
+    switch: DcSwitch,
+    n_strings: int,
+    voc_cold_string_v: float,
+    poles_per_string: int | None = None,
 ) -> tuple[float, float] | None:
     """``(ie_a, voltage step)`` of ``switch`` opening ``n_strings`` strings at Voc(T_min).
 
     ``None`` when it has too few poles or no rating at that voltage.
     """
-    per_string = box_switch_poles_per_string(n_strings)
+    per_string = box_switch_poles_per_string(n_strings, poles_per_string)
     if switch.poles < per_string * n_strings:
         return None
     return switch.rating_a(per_string, voc_cold_string_v)
 
 
 def box_switch_problem(
-    switch: DcSwitch, *, n_strings: int, voc_cold_string_v: float, string_i_max_a: float
+    switch: DcSwitch,
+    *,
+    n_strings: int,
+    voc_cold_string_v: float,
+    string_i_max_a: float,
+    poles_per_string: int | None = None,
 ) -> str | None:
     """Why the catalogue ``switch`` cannot be the box disconnect, or ``None`` when it can."""
-    per_string = box_switch_poles_per_string(n_strings)
+    per_string = box_switch_poles_per_string(n_strings, poles_per_string)
     if switch.poles < per_string * n_strings:
         return f"{switch.poles} polos; se requieren {per_string * n_strings}"
-    rating = box_switch_rating(switch, n_strings, voc_cold_string_v)
+    rating = box_switch_rating(switch, n_strings, voc_cold_string_v, per_string)
     if rating is None:
         return f"sin capacidad a {_n(voc_cold_string_v)} V con {per_string} polos por cadena"
     if rating[0] < string_i_max_a:
@@ -554,10 +571,15 @@ def select_box_switch(
     voc_cold_string_v: float,
     string_i_max_a: float,
     switches: Sequence[DcSwitch],
+    poles_per_string: int | None = None,
 ) -> tuple[DeviceChoice | None, list[Issue]]:
     """The PV switch-disconnector of the box: every string through two poles (four in series for
     a single string), rated at Voc(T_min) for at least the string's maximum current (690-8(a)).
+
+    ``poles_per_string`` fixes the wiring (the per-string box: one string, two poles); a switch
+    with more poles than needed qualifies (owner 2026-11-04: only the minimum matters).
     """
+    per_string = box_switch_poles_per_string(n_strings, poles_per_string)
     candidates: list[tuple[float, str, DcSwitch, float]] = []
     for switch in sorted(switches, key=lambda s: s.component_id):
         problem = box_switch_problem(
@@ -565,8 +587,9 @@ def select_box_switch(
             n_strings=n_strings,
             voc_cold_string_v=voc_cold_string_v,
             string_i_max_a=string_i_max_a,
+            poles_per_string=per_string,
         )
-        rating = box_switch_rating(switch, n_strings, voc_cold_string_v)
+        rating = box_switch_rating(switch, n_strings, voc_cold_string_v, per_string)
         if problem is None and rating is not None:
             candidates.append((rating[0], switch.component_id, switch, rating[1]))
     if not candidates:
@@ -585,13 +608,12 @@ def select_box_switch(
     ie_a, name, switch, step_v = min(
         candidates, key=lambda c: (c[0], c[2].utilization_category is None, c[1])
     )
-    poles_per_string = box_switch_poles_per_string(n_strings)
     return DeviceChoice(
         position,
         name,
         ie_a,
         step_v,
-        note_es=f"{poles_per_string} polos por cadena, "
+        note_es=f"{per_string} polos por cadena, "
         + (switch.utilization_category or "categoría de uso no publicada por el fabricante"),
         poles=switch.poles,  # the switch uses all of its poles (four in series for one string)
     ), []

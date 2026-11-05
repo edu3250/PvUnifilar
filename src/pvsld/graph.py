@@ -193,7 +193,7 @@ class GraphResult:
 
 # --- Ports and connectivity -----------------------------------------------------------------
 
-_SWITCH_PORT = re.compile(r"^(IN|OUT)(\d+)$")
+_SWITCH_PORT = re.compile(r"^(IN|OUT)(\d*)$")
 _PORTS: dict[str, frozenset[str]] = {
     "pv_string": frozenset({"OUT"}),
     "inverter": frozenset({"A", "B", "AC", "PE"}),
@@ -583,9 +583,10 @@ def graph_to_spec(
                 },
             )
     for node_id, node in b.nodes.items():
-        if node.type in ("dc_fuse_holder", "dc_breaker"):
+        per_string = re.match(r"^(DCD|DPS)-(S\d+)$", node_id)
+        if node.type in ("dc_fuse_holder", "dc_breaker") or per_string:
             owners = [s for s, devices in on_path.items() if node_id in devices]
-            expected = node_id.split("-", 1)[1] if "-" in node_id else None
+            expected = per_string.group(2) if per_string else node_id.split("-", 1)[-1]
             if not owners:
                 b.issue("topology", f"{node_id} no está en el camino de ninguna cadena.", node_id)
             elif owners != [expected]:
@@ -595,7 +596,11 @@ def graph_to_spec(
                     f"{expected}.",
                     node_id,
                 )
-            disconnects.append(_device(node, b, len(disconnects)))
+            if node.type == "dc_spd":
+                b.mapped[node_id] = f"dc_bos.spds[{len(spds)}]"
+                spds.append({**node.values, "id": node_id, "at": f"{first_inverter}.dc"})
+            else:
+                disconnects.append(_device(node, b, len(disconnects)))
         elif node.type == "dc_switch":
             disconnects.append(_device(node, b, len(disconnects)))
         elif node.type == "dc_spd":
