@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-04
+
+### Added
+
+- Per-string DC box (`dc_box(..., layout="per_string")`, owner request 2026-11-04): each string has its fuse, its own two-pole switch `DCD-<string>` and its own SPD `DPS-<string>` sized for that string; only the ground is shared. The layout is deduced from the part ids (`box_layout`), so a re-evaluation keeps it. `graph_to_spec` accepts the drawing, the palette names the parts, and the plugin's drawing of it is listed as pending in the capability matrix.
+- `evaluate_choices` checks every DC SPD of the box: U_CPV (SPD-002), In (SPD-003), I_SCPV (SPD-004) and its catalogue model.
+
+### Changed
+
+- The sizing engine takes the box SPD from the catalogue (as `dc_box` does) instead of keeping the template's values: the plugin's drawings and reports now show the selected CLAMPER Solar device.
+
 ## [0.7.1] - 2026-11-03
 
 ### Added

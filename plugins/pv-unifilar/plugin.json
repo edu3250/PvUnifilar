@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "pv-unifilar",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Diagramas unifilares de sistemas fotovoltaicos interconectados en México (CFE, NOM-001-SEDE-2012): plano DWG o DXF y PDF, memoria de cálculo en Excel y PDF, hoja de proyecto editable y resumen de materiales, a partir de una petición sencilla.",
   "author": {
     "name": "edu3250",

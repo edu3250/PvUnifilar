@@ -74,6 +74,19 @@ CAPABILITIES: tuple[Capability, ...] = (
         "Fusible gPV (o ITM de CD) por cadena, DPS de CD y seccionador, armada por el motor.",
     ),
     Capability(
+        "dc_box.per_string",
+        "Caja de protecciones CD por cadena",
+        "supported",
+        "Cada cadena con su fusible, su seccionador de 2 polos y su DPS (solo se comparte la "
+        "tierra): caja, dibujo del editor y revisiones.",
+    ),
+    Capability(
+        "drawing.dc_box_per_string",
+        "Plano de la caja por cadena",
+        "pending",
+        "La plantilla del plano (plugin) dibuja solo la caja compartida.",
+    ),
+    Capability(
         "utility.system",
         "Servicio",
         "supported",

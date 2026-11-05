@@ -851,6 +851,20 @@ a `conflict` issue and the largest size.
 **Tests**: tests/test_graph.py.
 **Status**: Complete (PR #62)
 
+#### Stage 3.8.8: ENG-004b per-string DC box and SPD checks
+**Goal**: `dc_box(..., layout="shared"|"per_string"|"auto")`. In `per_string` (the owner's
+commercial two-circuit box) each string has its fuse, its own two-pole switch `DCD-<string>` and
+its own SPD `DPS-<string>`, sized for that string alone; only the ground is shared. The layout
+lives in the spec through the part ids (`box_layout`), so "auto" (default) keeps it on
+re-evaluation. `graph_to_spec` accepts several switches and SPDs in the box group, each checked
+on its string's path; `evaluate_choices` checks each switch (DIS-002, two poles per string) and
+each SPD (SPD-002 U_CPV, SPD-003 In, SPD-004 I_SCPV, model). The sizing engine now takes the box
+SPD from the catalogue too, so the plugin and the editor agree. The plugin's drawing of a
+per-string box is pending (capability matrix). Owner answers 2026-11-04: a switch with more poles
+than needed qualifies; the drawing can wait.
+**Tests**: tests/test_dcbox_per_string.py; tests/test_palette_naming.py.
+**Status**: Complete (PR #64)
+
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:

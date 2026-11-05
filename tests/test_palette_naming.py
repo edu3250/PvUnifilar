@@ -92,3 +92,8 @@ def test_naming_is_in_the_json(palette) -> None:
     data = palette.model_dump(mode="json")
     assert data["types"][0]["naming"][0]["pattern"] == "S{n}"
     assert {d["pattern"] for d in data["derived_names"]} >= {"C-S{n}", "C-INV"}
+
+
+def test_the_per_string_box_follows_the_rules(palette, sized) -> None:
+    for child in dc_box(sized, layout="per_string").children:
+        assert _matches(palette, child.type_id, child.id), child.id
