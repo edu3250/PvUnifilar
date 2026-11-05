@@ -863,7 +863,7 @@ SPD from the catalogue too, so the plugin and the editor agree. The plugin's dra
 per-string box is pending (capability matrix). Owner answers 2026-11-04: a switch with more poles
 than needed qualifies; the drawing can wait.
 **Tests**: tests/test_dcbox_per_string.py; tests/test_palette_naming.py.
-**Status**: In Progress (PR open)
+**Status**: Complete (PR #64)
 
 ---
 

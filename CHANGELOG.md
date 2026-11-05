@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-04
+
 ### Added
 
 - Per-string DC box (`dc_box(..., layout="per_string")`, owner request 2026-11-04): each string has its fuse, its own two-pole switch `DCD-<string>` and its own SPD `DPS-<string>` sized for that string; only the ground is shared. The layout is deduced from the part ids (`box_layout`), so a re-evaluation keeps it. `graph_to_spec` accepts the drawing, the palette names the parts, and the plugin's drawing of it is listed as pending in the capability matrix.
