@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-11-06
+
 ### Changed
 
 - The poles of each string's gPV fuse and DC breaker follow `grounding.dc_system`: 2 on an ungrounded array (NOM 690-35), 1 on a grounded one. `pvsld.sizing.bos.string_ocpd_poles` is the rule; sizing, `dc_box`, the DC breaker's voltage and `evaluate_choices` use it, and the palette publishes `poles_by_dc_system`. The box disconnect is unchanged.

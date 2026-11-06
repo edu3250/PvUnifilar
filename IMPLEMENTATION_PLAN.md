@@ -875,7 +875,7 @@ breaker's voltage (`ue_options_v(poles)`) use it; `evaluate_choices` checks a pr
 approved by the owner 2026-11-06; the box disconnect is unchanged for now (to be reviewed with the
 NOM text).
 **Tests**: tests/test_string_ocpd_poles.py.
-**Status**: In Progress (PR open)
+**Status**: Complete (PR #66)
 
 ---
 
