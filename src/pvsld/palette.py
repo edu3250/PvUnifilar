@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pvsld.catalogue.registry import Component, ComponentRegistry
 from pvsld.core import model as spec_model
 from pvsld.resources import data_path
+from pvsld.sizing.bos import STRING_OCPD_POLES_BY_DC_SYSTEM
 from pvsld.symbols.cfe import get_symbol
 from pvsld.symbols.cfe.model import (
     LIBRARY_VERSION,
@@ -277,6 +278,11 @@ class TypeDescriptor(BaseModel):
         description="Values of the spec section that come from the connections "
         "(pvsld.graph.graph_to_spec); an editor does not ask for them",
     )
+    poles_by_dc_system: dict[str, int] | None = Field(
+        default=None,
+        description="Poles of the part by grounding.dc_system (string fuses and DC breakers: "
+        "pvsld.sizing.bos.string_ocpd_poles)",
+    )
     symbol: SymbolModel
     fingerprint: str = Field(description="SHA-256 of this descriptor without the fingerprint")
 
@@ -344,6 +350,7 @@ class _TypeDef:
         id_prefix: str | None = None,
         naming: tuple[NamingRule, ...] = (),
         derived_fields: tuple[str, ...] = (),
+        poles_by_dc_system: dict[str, int] | None = None,
     ) -> None:
         self.type_id = type_id
         self.label_es = label_es
@@ -354,6 +361,7 @@ class _TypeDef:
         self.id_prefix = id_prefix
         self.naming = naming
         self.derived_fields = derived_fields
+        self.poles_by_dc_system = poles_by_dc_system
 
 
 def _rule(pattern: str, description_es: str, context: str = "default") -> NamingRule:
@@ -392,6 +400,7 @@ TYPES: tuple[_TypeDef, ...] = (
         id_prefix="FUS-",
         naming=(_rule("FUS-{string}", f"FUS-S1: {_PER_STRING}"),),
         derived_fields=("integrated_in",),
+        poles_by_dc_system=dict(STRING_OCPD_POLES_BY_DC_SYSTEM),
     ),
     _TypeDef(
         "dc_breaker",
@@ -403,6 +412,7 @@ TYPES: tuple[_TypeDef, ...] = (
         id_prefix="DCB-",
         naming=(_rule("DCB-{string}", f"DCB-S1: {_PER_STRING}"),),
         derived_fields=("integrated_in",),
+        poles_by_dc_system=dict(STRING_OCPD_POLES_BY_DC_SYSTEM),
     ),
     _TypeDef(
         "dc_switch",
@@ -664,6 +674,7 @@ def _type_descriptor(definition: _TypeDef) -> TypeDescriptor:
         "parameters_schema": schema,
         "naming": definition.naming,
         "derived_fields": definition.derived_fields,
+        "poles_by_dc_system": definition.poles_by_dc_system,
         "symbol": _symbol_model(get_symbol(definition.block), add_anchors=True),
     }
     draft = TypeDescriptor.model_construct(**fields, fingerprint="")

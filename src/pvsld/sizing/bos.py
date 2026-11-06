@@ -65,6 +65,17 @@ STRING_BREAKER_POLES = 2
 """A string is a two-wire circuit: both conductors are opened (ungrounded array, NOM 690-35)."""
 STRING_FUSE_POLES = 2
 """One gPV fuse per conductor of the string, in a two-pole fuse-disconnector."""
+STRING_OCPD_POLES_BY_DC_SYSTEM = {"ungrounded_690_35": 2, "grounded": 1}
+"""Poles of a string's fuse or DC breaker by ``grounding.dc_system`` (owner request
+2026-11-06): both conductors of an ungrounded array (NOM 690-35), only the ungrounded conductor
+of a grounded one (the grounded conductor carries no overcurrent device)."""
+
+
+def string_ocpd_poles(dc_system: str | None) -> int:
+    """Poles of the gPV fuse or DC breaker of each string for ``dc_system`` (default: 2)."""
+    return STRING_OCPD_POLES_BY_DC_SYSTEM.get(dc_system or "", STRING_FUSE_POLES)
+
+
 LARGEST_SIZE = "4/0 AWG"
 
 TODO_STAGE_3_4B = (
@@ -121,10 +132,17 @@ class StringNeed:
     """Voc of the string at the lowest temperature: the least rated voltage."""
     fault_a: float
     """Current the protection may have to interrupt: every string of the input."""
+    poles: int = STRING_FUSE_POLES
+    """Poles of the protection: :func:`string_ocpd_poles` of the array's ``dc_system``."""
 
 
 def string_need(
-    *, max_series_fuse_a: float, isc_a: float, strings_per_input: int, voc_cold_string_v: float
+    *,
+    max_series_fuse_a: float,
+    isc_a: float,
+    strings_per_input: int,
+    voc_cold_string_v: float,
+    poles: int = STRING_FUSE_POLES,
 ) -> StringNeed:
     """The :class:`StringNeed` of a string of ``isc_a`` with ``strings_per_input`` on its input."""
     return StringNeed(
@@ -132,6 +150,7 @@ def string_need(
         maximum_a=max_series_fuse_a,
         voc_cold_v=voc_cold_string_v,
         fault_a=strings_per_input * isc_a,
+        poles=poles,
     )
 
 
@@ -156,21 +175,21 @@ def fuse_problem(fuse: DcFuse, need: StringNeed) -> str | None:
 
 
 def breaker_fit(breaker: DcBreaker, need: StringNeed) -> tuple[str | None, float, float]:
-    """``(why, ue_v, icu_ka)`` of a two-pole catalogue ``breaker`` on the string.
+    """``(why, ue_v, icu_ka)`` of a catalogue ``breaker`` with ``need.poles`` poles on the string.
 
     ``why`` is ``None`` when the breaker can protect it; ``ue_v`` is then the smallest rated
     voltage at or above Voc(T_min) and ``icu_ka`` its breaking capacity there.
     """
     if (why := string_rating_problem(breaker.rated_current_a, need)) is not None:
         return why, 0.0, 0.0
-    voltages = [v for v in breaker.ue_options_v(STRING_BREAKER_POLES) if v >= need.voc_cold_v]
+    voltages = [v for v in breaker.ue_options_v(need.poles) if v >= need.voc_cold_v]
     if not voltages:
         return (
-            f"sin tensión nominal >= {_n(need.voc_cold_v)} V en {STRING_BREAKER_POLES}P",
+            f"sin tensión nominal >= {_n(need.voc_cold_v)} V en {need.poles}P",
             0.0,
             0.0,
         )
-    icu_ka = breaker.breaking_capacity_ka(STRING_BREAKER_POLES, need.voc_cold_v)
+    icu_ka = breaker.breaking_capacity_ka(need.poles, need.voc_cold_v)
     if icu_ka is None or icu_ka * 1000 < need.fault_a:
         shown = "sin dato" if icu_ka is None else f"{_g(icu_ka)} kA"
         return f"capacidad de ruptura {shown} < {_n(need.fault_a)} A de falla", 0.0, 0.0
@@ -178,13 +197,18 @@ def breaker_fit(breaker: DcBreaker, need: StringNeed) -> tuple[str | None, float
 
 
 def _need_of(
-    module: CatalogueModule, isc_a: float, strings_per_input: int, voc_cold_string_v: float
+    module: CatalogueModule,
+    isc_a: float,
+    strings_per_input: int,
+    voc_cold_string_v: float,
+    poles: int = STRING_FUSE_POLES,
 ) -> StringNeed:
     return string_need(
         max_series_fuse_a=module.max_series_fuse_a,
         isc_a=isc_a,
         strings_per_input=strings_per_input,
         voc_cold_string_v=voc_cold_string_v,
+        poles=poles,
     )
 
 
@@ -225,7 +249,7 @@ def breaker_for(need: StringNeed, breakers: Sequence[DcBreaker], reason_es: str)
         device_id=name,
         rating_a=rating,
         ue_v=ue_v,
-        poles=STRING_BREAKER_POLES,
+        poles=need.poles,
         icu_ka=icu_ka,
         minimum_rating_a=need.minimum_a,
         rejected=tuple(rejected),
@@ -264,7 +288,7 @@ def fuse_for(need: StringNeed, fuses: Sequence[DcFuse], reason_es: str) -> DcOcp
         device="fuse",
         rating_a=rating,
         ue_v=fuse.rated_voltage_v,
-        poles=STRING_FUSE_POLES,
+        poles=need.poles,
         icu_ka=fuse.breaking_capacity_ka,
         minimum_rating_a=need.minimum_a,
         rejected=tuple(rejected),
@@ -280,6 +304,7 @@ def select_string_breaker(
     breakers: Sequence[DcBreaker],
     required: bool,
     reason_es: str,
+    poles: int = STRING_BREAKER_POLES,
 ) -> DcOcpdChoice:
     """Choose the smallest catalogue breaker that satisfies the criteria of the module docstring.
 
@@ -288,7 +313,7 @@ def select_string_breaker(
     """
     if not required:
         return DcOcpdChoice(required=False, reason_es=reason_es)
-    need = _need_of(module, isc_a, strings_per_input, voc_cold_string_v)
+    need = _need_of(module, isc_a, strings_per_input, voc_cold_string_v, poles)
     return breaker_for(need, breakers, reason_es)
 
 
@@ -301,6 +326,7 @@ def select_string_fuse(
     fuses: Sequence[DcFuse],
     required: bool,
     reason_es: str,
+    poles: int = STRING_FUSE_POLES,
 ) -> DcOcpdChoice:
     """Choose the smallest catalogue gPV fuse that satisfies the criteria of the module docstring.
 
@@ -309,7 +335,7 @@ def select_string_fuse(
     """
     if not required:
         return DcOcpdChoice(required=False, reason_es=reason_es, device="fuse")
-    need = _need_of(module, isc_a, strings_per_input, voc_cold_string_v)
+    need = _need_of(module, isc_a, strings_per_input, voc_cold_string_v, poles)
     return fuse_for(need, fuses, reason_es)
 
 
