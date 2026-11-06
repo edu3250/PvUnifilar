@@ -295,6 +295,10 @@ def dc_box(
     except (ValidationError, KeyError, TypeError):  # pragma: no cover - the draft checked them
         return DcBox(draft, skipped_es="No se armó la caja: los módulos no son válidos.")
     lock = _Locks(locks, _drawn(data))
+    grounding = data.get("grounding") if isinstance(data, Mapping) else None
+    ocpd_poles = bos.string_ocpd_poles(
+        grounding.get("dc_system") if isinstance(grounding, Mapping) else None
+    )
     if layout == "auto":
         layout = box_layout(data) or "shared"
     inverter = get_symbol("PVSLD_INV")
@@ -318,6 +322,7 @@ def dc_box(
             isc_a=string.isc_a,
             strings_per_input=string.n_parallel,
             voc_cold_string_v=string.voc_max_string_v,
+            poles=ocpd_poles,
         )
         required, why = bos.string_ocpd_required(module, string.isc_a, string.n_parallel)
         reason = why if required else f"{why} {DESIGN_CHOICE_ES}"
@@ -331,7 +336,7 @@ def dc_box(
         if choice.rating_a is not None:
             values = {"ie_a": choice.rating_a, "ue_v": choice.ue_v, "model": choice.device_id}
         values, kept = lock.keep(part_id, values)
-        poles = choice.poles or (bos.STRING_FUSE_POLES if is_fuse else bos.STRING_BREAKER_POLES)
+        poles = choice.poles or ocpd_poles
         connector, entry, exit_ = f"CX-{sid}", f"XE-{sid}", f"XS-{sid}"
         children += [
             BoxChild(

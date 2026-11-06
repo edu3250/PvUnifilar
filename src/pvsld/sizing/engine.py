@@ -231,6 +231,8 @@ def _size_bos(
         "strings_per_input": metrics.strings_per_mppt,
         "voc_cold_string_v": metrics.voc_cold_string_v,
         "required": needed,
+        # 1 pole on a grounded array, 2 on an ungrounded one (owner request 2026-11-06)
+        "poles": bos.string_ocpd_poles((request.template.get("grounding") or {}).get("dc_system")),
     }
     dc_ocpd = None
     if request.dc_ocpd_device == "fuse":
@@ -512,10 +514,10 @@ def _build_spec(
             {
                 "id": BOX_SWITCH_ID,
                 "integrated_in": None,
-                "poles": dc_ocpd.poles * config.n_strings,
+                "poles": bos.STRING_SWITCH_POLES * config.n_strings,
                 **(
                     {
-                        "poles": switch.poles or dc_ocpd.poles * config.n_strings,
+                        "poles": switch.poles or bos.STRING_SWITCH_POLES * config.n_strings,
                         "ue_v": switch.voltage_v,
                         "ie_a": switch.rating_a,
                         "model": switch.device_id,

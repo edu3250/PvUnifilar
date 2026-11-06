@@ -60,7 +60,7 @@ La primera vez, uv descarga unos 60 MB de dependencias. Con una conexión normal
 - **Descargarlo antes** (recomendado). En una terminal, una sola vez:
 
   ```bash
-  uvx --from pvsld==0.7.2 pvsld-mcp --version
+  uvx --from pvsld==0.7.3 pvsld-mcp --version
   ```
 
   Cuando responda con el número de versión, abre Claude Code.
@@ -435,7 +435,7 @@ En una carpeta `PvUnifilar` dentro de tu carpeta de usuario (en Windows, `C:\Use
 Igual que en Claude Code, la primera vez se descargan las dependencias. Conviene hacerlo antes, una sola vez:
 
 ```bash
-uvx --from pvsld==0.7.2 pvsld-mcp --version
+uvx --from pvsld==0.7.3 pvsld-mcp --version
 ```
 
 ### Cualquier otro cliente MCP
@@ -447,7 +447,7 @@ El plugin es una capa sobre un servidor MCP estándar. En un cliente que no lee 
   "mcpServers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.7.2", "pvsld-mcp"]
+      "args": ["--from", "pvsld==0.7.3", "pvsld-mcp"]
     }
   }
 }
