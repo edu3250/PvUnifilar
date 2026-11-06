@@ -294,6 +294,8 @@ class _Evaluator:
     def string_protections(self) -> None:
         strings = {s.string_id: s for s in self.derived.strings}
         modules = {m.id: m for m in self.spec.modules}
+        dc_system = self.spec.grounding.dc_system
+        poles_needed = bos.string_ocpd_poles(dc_system)
         for device in self.spec.dc_bos.disconnects:
             if device.id.startswith(STRING_FUSE_PREFIX):
                 prefix, kind, label = STRING_FUSE_PREFIX, DcFuse, "fusible gPV"
@@ -318,6 +320,7 @@ class _Evaluator:
                 isc_a=string.isc_a,
                 strings_per_input=string.n_parallel,
                 voc_cold_string_v=string.voc_max_string_v,
+                poles=poles_needed,
             )
             reason = f"Protección de la cadena {string.string_id}."
             choice = (
@@ -381,6 +384,26 @@ class _Evaluator:
                 ok_es=f"{device.id}: {_g(device.ue_v)} V >= Voc en frío ({_n(need.voc_cold_v)} V).",
                 proposed=choice.ue_v,
                 why_es=why,
+            )
+            # Poles follow grounding.dc_system (owner request 2026-11-06): fewer than needed
+            # leaves an ungrounded conductor unprotected; more is proposed down as an update.
+            system_es = "aterrizado" if dc_system == "grounded" else "no aterrizado (NOM 690-35)"
+            self.record(
+                device.id,
+                "poles",
+                device.poles,
+                rule_id="OCP-002",
+                problem=None
+                if device.poles >= poles_needed
+                else (
+                    "OCP-002",
+                    Severity.ERROR,
+                    f"{device.id}: {device.poles} polo(s); el arreglo {system_es} necesita "
+                    f"{poles_needed} por cadena.",
+                ),
+                ok_es=f"{device.id}: {device.poles} polo(s) para un arreglo {system_es}.",
+                proposed=poles_needed,
+                why_es=f"Arreglo {system_es}: {poles_needed} polo(s) por cadena.",
             )
 
     def _string_model_problem(

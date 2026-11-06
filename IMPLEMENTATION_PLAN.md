@@ -865,6 +865,18 @@ than needed qualifies; the drawing can wait.
 **Tests**: tests/test_dcbox_per_string.py; tests/test_palette_naming.py.
 **Status**: Complete (PR #64)
 
+#### Stage 3.8.9: string OCPD poles from grounding.dc_system
+**Goal**: the poles of each string's gPV fuse and DC breaker follow `grounding.dc_system`: 2 on
+an ungrounded array (NOM 690-35, both conductors), 1 on a grounded one (only the ungrounded
+conductor). `bos.string_ocpd_poles(dc_system)` is the public rule; sizing, `dc_box` and the DC
+breaker's voltage (`ue_options_v(poles)`) use it; `evaluate_choices` checks a protection's poles
+(fewer than needed: OCP-002 error; more: an update to the rule); the palette publishes
+`poles_by_dc_system` on the fuse holder and the DC breaker. Request from the editor session
+approved by the owner 2026-11-06; the box disconnect is unchanged for now (to be reviewed with the
+NOM text).
+**Tests**: tests/test_string_ocpd_poles.py.
+**Status**: In Progress (PR open)
+
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:
