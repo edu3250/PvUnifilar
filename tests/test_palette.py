@@ -121,3 +121,11 @@ def test_cli_prints_the_palette(capsys: pytest.CaptureFixture[str], palette: Pal
     assert "pv_string" in capsys.readouterr().out
     assert main(["palette", "--schema"]) == 0
     assert json.loads(capsys.readouterr().out)["title"] == "Palette"
+
+
+def test_three_phase_inverters_are_not_designable(palette: Palette) -> None:
+    solis = next(e for e in palette.equipment if e.component_id == "SOLIS-S5-GC20K-LV")
+    assert solis.designable is False
+    assert "monofásicos" in (solis.not_designable_es or "")
+    growatt = next(e for e in palette.equipment if e.component_id == "GROWATT-MIN-5000TL-X2")
+    assert (growatt.designable, growatt.not_designable_es) == (True, None)

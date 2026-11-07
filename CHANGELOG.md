@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Solis S5-GC15K/20K/23K-LV three-phase inverters in the catalogue (3 MPPT, 2 inputs each, 32 A / 50 A per MPPT). The engine does not design three-phase services yet: the palette marks them `designable: false` with the reason, and `graph_to_spec` reports a three-phase inverter as `unsupported`.
+- Capability matrix: `dc_box.combined` (two strings paralleled after their fuses into one MPPT input, ENG-016) as pending, since no single-phase inverter in the catalogue takes two strings on one input.
+
 ## [0.7.3] - 2026-11-06
 
 ### Changed

@@ -81,6 +81,13 @@ CAPABILITIES: tuple[Capability, ...] = (
         "tierra): caja, dibujo del editor y revisiones.",
     ),
     Capability(
+        "dc_box.combined",
+        "Caja 2 entradas → 1 salida",
+        "pending",
+        "Dos cadenas unidas en paralelo después de sus fusibles hacia una sola entrada MPPT "
+        "(ENG-016): requiere inversores con entradas de más corriente (comerciales, trifásicos).",
+    ),
+    Capability(
         "drawing.dc_box_per_string",
         "Plano de la caja por cadena",
         "pending",
