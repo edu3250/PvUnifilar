@@ -308,6 +308,14 @@ class EquipmentEntry(BaseModel):
     manufacturer: str
     family_id: str
     provenance: EquipmentProvenance
+    designable: bool = Field(
+        default=True,
+        description="False when the engine cannot design with it yet (e.g. a three-phase "
+        "inverter); the editor may show it disabled",
+    )
+    not_designable_es: str | None = Field(
+        default=None, description="Why the engine cannot design with it yet, in Spanish"
+    )
 
 
 class Palette(BaseModel):
@@ -690,6 +698,13 @@ def _equipment(components: Iterable[Component]) -> tuple[EquipmentEntry, ...]:
         if type_id is None:  # conductors are wires, not palette items
             continue
         source = component.source
+        grid = getattr(component, "grid", "single_phase")
+        blocked = (
+            f"Inversor {'trifásico' if grid == 'three_phase' else grid}: por ahora el motor solo "
+            "diseña servicios monofásicos."
+            if grid != "single_phase"
+            else None
+        )
         entries.append(
             EquipmentEntry(
                 component_id=component.component_id,
@@ -704,6 +719,8 @@ def _equipment(components: Iterable[Component]) -> tuple[EquipmentEntry, ...]:
                     reviewed_by=source.reviewed_by,
                     review_date=source.review_date,
                 ),
+                designable=blocked is None,
+                not_designable_es=blocked,
             )
         )
     return tuple(sorted(entries, key=lambda e: (e.type_id, e.component_id)))

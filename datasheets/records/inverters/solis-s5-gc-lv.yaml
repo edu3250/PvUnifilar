@@ -1,0 +1,52 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per model.
+# Three-phase commercial inverter: the engine does not design three-phase services yet (capability matrix).
+component_type: string_inverter
+family_id: SOLIS-S5-GC-LV
+manufacturer: Solis
+model_family: S5-GC(15-23)K-LV
+startup_voltage_v: 180
+rated_input_voltage_v: 600
+mppt_count: 3
+inputs_per_mppt: 2                         # "Número de MPPT/Número máxima de cadenas de entrada 3/6"
+max_input_current_per_mppt_a: 32
+max_short_circuit_current_per_mppt_a: 50
+grid: three_phase
+rated_ac_voltage_v: [220]                  # 3/(N)/PE, 220 V
+max_ac_current_reference_voltage_v: 200    # see notes: S = sqrt(3) x V x I_max holds at 200 V
+frequency_hz: [60]
+power_factor_range: [-0.8, 0.8]            # "0.8 que lleva a 0.8 de retraso"
+thd_max_pct: 3
+protection: {dc_reverse_polarity: true, dc_switch: true, dc_spd: "Type II", ac_spd: "Type II", insulation_monitoring: true, ac_short_circuit: true, grid_monitoring: true, anti_islanding: true, afci: true}
+topology: transformerless
+operating_temp_c: [-25, 60]
+altitude_m: 4000
+ip_rating: TYPE 4X (NEMA enclosure type, as printed)
+weight_kg: 37
+dimensions_mm: [647, 629, 252]
+night_power_w: 1
+dc_connector: MC4
+max_input_voltage_v: 1100
+mppt_voltage_range_v: [200, 1000]
+variants:
+  - {component_id: SOLIS-S5-GC15K-LV, recommended_max_pv_power_wp: 19500, rated_ac_power_w: 15000, max_apparent_power_va: 15000, max_ac_output_current_a: 43.3, max_efficiency_pct: 98.3, euro_efficiency_pct: 97.9}
+  - {component_id: SOLIS-S5-GC20K-LV, recommended_max_pv_power_wp: 26000, rated_ac_power_w: 20000, max_apparent_power_va: 20000, max_ac_output_current_a: 57.7, max_efficiency_pct: 98.3, euro_efficiency_pct: 97.9}
+  - {component_id: SOLIS-S5-GC23K-LV, recommended_max_pv_power_wp: 30000, rated_ac_power_w: 23000, max_apparent_power_va: 23000, max_ac_output_current_a: 65.0, max_efficiency_pct: 98.3, euro_efficiency_pct: 97.9}
+source:
+  filename: S5-GC20K-LV_FichaTecnica.pdf
+  sha256: 4a68c00a4ec63667c92232d8c6866560301b458906132309d07932c34f08e66c
+  title: Solis inversores trifásicos S5-GC(15-23)K-LV, tabla de datos (Spanish, 220 V)
+  pages: [1, 2]
+  extraction_method: pdf_text_layer
+  extraction_date: 2026-11-07
+  reviewed_by: edu3250
+  review_date: 2026-11-07
+  notes: >-
+    The owner provided the PDF on 2026-11-07 (to show that two strings per MPPT input fit a commercial inverter) and
+    asked to add it; the engine does not design three-phase services yet, so the record is not selectable for a design
+    until that support exists. Values from the PDF text layer, checked against the rendered page. The datasheet prints
+    the rated output current (39.4 / 52.5 / 60.4 A, S = sqrt(3) x 220 V x I) and the maximum output current
+    (43.3 / 57.7 / 65 A); the maximum current matches the apparent power at about 200 V (220 V - 10 %), so
+    max_ac_current_reference_voltage_v is 200 V by that calculation, not a printed value. "Monitoreo fallas a tierra"
+    is recorded as insulation monitoring. Enclosure "TYPE 4X" is a NEMA/UL type, not an IP code. PID recovery is
+    optional. Compliance: UL 1741, IEEE 1547, UL 1699B, UL 1998, FCC, UL 1741SA. Relative humidity 0-100 %,
+    redundant smart fan cooling, LCD, RS485 (Wi-Fi/GPRS optional), AC connection by OT terminal.

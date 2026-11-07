@@ -116,6 +116,7 @@ IssueCode = Literal[
     "unknown_component",
     "missing_value",
     "conflict",
+    "unsupported",
 ]
 
 
@@ -489,6 +490,14 @@ def graph_to_spec(
     for index, node in enumerate(by_type.get("inverter", [])):
         found = b.component(node, "model", CatalogueInverter, "inversor")
         if found is None or utility is None:
+            continue
+        if found.grid != "single_phase":
+            b.issue(
+                "unsupported",
+                f"{node.id}: el inversor {found.component_id} es trifásico; por ahora el motor "
+                "solo diseña servicios monofásicos (ver la matriz de capacidades).",
+                node.id,
+            )
             continue
         spec_inverter = adapters.to_spec_inverter(
             found,
