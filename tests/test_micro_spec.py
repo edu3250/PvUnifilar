@@ -157,14 +157,14 @@ def test_capabilities_list_microinverters() -> None:
     status = {c["id"]: c["status"] for c in doc["capabilities"]}
     assert status["microinverters"] == "supported"
     assert status["microinverters.ac_combiner"] == "supported"
-    assert status["drawing.microinverters"] == "pending"
+    assert status["drawing.microinverters"] == "supported"
     assert "micro" in doc["limits"]["inverter_types"]
     assert doc["limits"]["max_micro_models"] == 1
 
 
-def test_the_drawing_says_microinverters_are_pending(data) -> None:
-    spec = parse_spec(data)
-    with pytest.raises(LayoutError, match="microinversores"):
+def test_the_v1_template_refuses_microinverters(data) -> None:
+    spec = parse_spec(data)  # the example uses bt_string_residential_v1
+    with pytest.raises(LayoutError, match="a3_plantilla_v1"):
         layout_diagram(spec, derive(spec))
 
 

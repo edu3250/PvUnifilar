@@ -91,8 +91,9 @@ CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "drawing.dc_box_per_string",
         "Plano de la caja por cadena",
-        "pending",
-        "La plantilla del plano (plugin) dibuja solo la caja compartida.",
+        "supported",
+        "La plantilla A3 dibuja la caja por cadena: fusible, DPS y seccionador de 2 polos por "
+        "cadena.",
     ),
     Capability(
         "microinverters",
@@ -118,8 +119,9 @@ CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "drawing.microinverters",
         "Plano con microinversores",
-        "pending",
-        "La plantilla del plano (plugin) dibuja solo inversores de cadena.",
+        "supported",
+        "Plantilla A3 (a3_plantilla_v1): cada rama en un renglón con sus módulos, troncal y caja "
+        "de conexiones, ITM de rama y caja combinadora; hasta 8 microinversores en 3 ramas.",
     ),
     Capability(
         "utility.system",

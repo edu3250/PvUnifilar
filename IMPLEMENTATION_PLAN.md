@@ -963,10 +963,18 @@ form, kAIC; combiner main; 120 % busbar), the BOM with modules on micro inputs, 
 junction boxes and combiner; the project sheet no longer fails on a micro design (its micro rows
 come with the pro mode, 3.10.5).
 **Tests**: tests/test_micro_report.py (every Excel formula re-evaluated against the Python value).
-**Status**: In Progress
+**Status**: Complete (PR #77)
 
-##### Stage 3.10.4: A3 sheet drawing with micros and the per-string DC box
-**Status**: Not Started
+##### Stage 3.10.4: A3 sheet drawing with micros (per-string DC box drawing: separate PR)
+**Goal**: `pvsld.core.layout_micro.build_micro_schematic` on the a3_plantilla_v1 sheet (owner
+approval of the mock-up, 2026-11-08): a row per branch (a one-module string on each used input,
+units on the trunk with junction dots, junction box, home run to the branch breaker), branch
+breakers into the load centre or the AC combiner enclosure (bus, AC SPD, main ITM-1 at the load
+centre, circuit C-CCA); markers 1 on the branch home runs, 2 on the combiner output; memory,
+circuit boxes, inverter box and project line for micros; up to 8 units in 3 branches, larger
+designs refused with a clear message; rows scale down to fit before the breakers.
+**Tests**: tests/test_micro_sheet.py.
+**Status**: In Progress
 
 ##### Stage 3.10.5: project sheet (pro mode) with micros
 **Status**: Not Started

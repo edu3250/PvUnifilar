@@ -1136,7 +1136,11 @@ def microinverter(n_inputs: int) -> SymbolSpec:
         _EQ_AC,
         geometry,
         (
-            *(Port(MICRO_INPUT_IDS[i], x, 7.5, "up", "DC") for i, x in enumerate(xs)),
+            # A free input (fewer modules than inputs) is not a dangling port.
+            *(
+                Port(MICRO_INPUT_IDS[i], x, 7.5, "up", "DC", required=False)
+                for i, x in enumerate(xs)
+            ),
             Port("AC", _r(width / 2), -7.5, "down", "AC"),
         ),
         tag_xy=(_r(width + 2), 5),
