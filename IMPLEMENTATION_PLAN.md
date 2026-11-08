@@ -929,10 +929,10 @@ per input, branches by breaker, unit order along the trunk, home run from the ju
 trunk size and spacing (drawn or default 1.2 m per module), branch / combiner breakers, the
 `ac_combiner` group node. The editor is notified with the 0.8.0 release.
 **Tests**: tests/test_graph_micro.py, tests/test_micro_symbols.py, palette tests.
-**Status**: In Progress
+**Status**: Complete (PR #73)
 
 ##### Stage 3.9.5: release 0.8.0
-**Status**: Not Started
+**Status**: In Progress
 
 ---
 

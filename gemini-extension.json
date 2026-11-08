@@ -1,6 +1,6 @@
 {
   "name": "pv-unifilar",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "Diagramas unifilares de sistemas fotovoltaicos interconectados en México (CFE, NOM-001-SEDE-2012): plano DWG o DXF y PDF, memoria de cálculo en Excel y PDF, hoja de proyecto editable y resumen de materiales, a partir de una petición sencilla.",
   "contextFileName": "plugins/pv-unifilar/GEMINI.md",
   "mcpServers": {
@@ -8,7 +8,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "pvsld==0.7.3",
+        "pvsld==0.8.0",
         "pvsld-mcp"
       ],
       "env": {

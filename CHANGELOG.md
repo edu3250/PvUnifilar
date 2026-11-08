@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-07
+
 ### Changed
 
 - Drawing a microinverter design raises a `LayoutError` that says the drawing is pending, instead of producing an incomplete sheet.
