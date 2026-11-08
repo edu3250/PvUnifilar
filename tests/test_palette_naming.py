@@ -44,7 +44,11 @@ def test_every_type_has_a_naming_rule(palette) -> None:
         "dc_box_entry": "XE-{string}",
         "dc_box_exit": "XS-{string}",
     }
-    assert {r.context for r in palette.type("ac_breaker").naming} == {"default", "service_main"}
+    assert {r.context for r in palette.type("ac_breaker").naming} == {
+        "default",
+        "service_main",
+        "micro_branch",
+    }
 
 
 def test_derived_fields_exist_in_their_spec_section(palette) -> None:

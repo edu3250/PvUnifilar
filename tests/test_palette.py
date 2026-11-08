@@ -28,6 +28,8 @@ ENGINE_TYPES = {
     "junction",
     "terminal",
     "pv_connector",
+    "ac_junction_box",
+    "ac_spd",
 }
 
 
@@ -38,10 +40,10 @@ def palette() -> Palette:
 
 def test_types_are_the_ones_the_engine_calculates(palette: Palette) -> None:
     assert [t.type_id for t in palette.types] == [t.type_id for t in TYPES]
-    assert len({t.type_id for t in palette.types}) == len(palette.types) == 15
+    assert len({t.type_id for t in palette.types}) == len(palette.types) == 19
     assert palette.format == FORMAT
     assert palette.library_version == LIBRARY_VERSION
-    assert palette.schema_version == spec_model.SCHEMA_VERSION
+    assert palette.schema_version == spec_model.MICRO_SCHEMA_VERSION
 
 
 @pytest.mark.parametrize("definition", TYPES, ids=lambda t: t.type_id)
@@ -85,9 +87,7 @@ def test_engine_types_have_no_manufacturer(palette: Palette) -> None:
 
 def test_equipment_comes_from_the_reviewed_catalogue(palette: Palette) -> None:
     registry = ComponentRegistry.load(data_path("datasheets/records"))
-    # Microinverters join the palette with the graph support (Stage 3.9.4).
-    skipped = {"conductor", "microinverter"}
-    expected = {c.component_id for c in registry if c.component_type not in skipped}
+    expected = {c.component_id for c in registry if c.component_type != "conductor"}
     assert {e.component_id for e in palette.equipment} == expected
     for entry in palette.equipment:
         assert entry.provenance.reviewed_by
@@ -131,3 +131,19 @@ def test_three_phase_inverters_are_not_designable(palette: Palette) -> None:
     assert "monofásicos" in (solis.not_designable_es or "")
     growatt = next(e for e in palette.equipment if e.component_id == "GROWATT-MIN-5000TL-X2")
     assert (growatt.designable, growatt.not_designable_es) == (True, None)
+
+
+def test_microinverters_name_their_symbol_variant(palette: Palette) -> None:
+    micro = palette.type("microinverter")
+    assert micro.symbol.block == "PVSLD_MICROINV_4IN"
+    assert [v.block for v in micro.symbol_variants] == [
+        "PVSLD_MICROINV_1IN",
+        "PVSLD_MICROINV_2IN",
+        "PVSLD_MICROINV_4IN",
+    ]
+    assert [p.id for p in micro.symbol.ports] == ["A", "B", "C", "D", "AC"]
+    neo = next(e for e in palette.equipment if e.component_id == "GROWATT-NEO-2500M-X2")
+    assert (neo.type_id, neo.block, neo.designable) == ("microinverter", "PVSLD_MICROINV_4IN", True)
+    module = next(e for e in palette.equipment if e.component_type == "pv_module")
+    assert module.type_id == "pv_string"  # the module on a micro input takes the same records
+    assert palette.type("pv_module").component_types == ("pv_module",)
