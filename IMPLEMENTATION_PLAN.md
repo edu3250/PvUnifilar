@@ -973,11 +973,17 @@ breakers into the load centre or the AC combiner enclosure (bus, AC SPD, main IT
 centre, circuit C-CCA); markers 1 on the branch home runs, 2 on the combiner output; memory,
 circuit boxes, inverter box and project line for micros; up to 8 units in 3 branches, larger
 designs refused with a clear message; rows scale down to fit before the breakers.
-**Tests**: tests/test_micro_sheet.py.
-**Status**: In Progress
+**Tests**: tests/test_micro_sheet.py, tests/test_per_string_box_sheet.py.
+**Status**: Complete (PRs #79, #80)
 
 ##### Stage 3.10.5: project sheet (pro mode) with micros
-**Status**: Not Started
+**Goal**: project sheet rows "Tipo de inversor", "Microinversor", "Caja combinadora de CA"
+(Equipos) and "Calibre del troncal", "Separación entre microinversores" (Conductores);
+`sheet_request` maps them to `microinverters`, `ac_combiner`, `micro_trunk_size` (new request
+field: fixes every branch's trunk) and `routing.micro_spacing_m`; MIC rejections go back onto the
+micro or trunk cell; an older sheet without the rows stays a string design.
+**Tests**: tests/test_micro_pro_sheet.py (including a full design with the drawing).
+**Status**: In Progress
 
 ##### Stage 3.10.6: skills, MCP tools, release 0.9.0, editor notified
 **Status**: Not Started
