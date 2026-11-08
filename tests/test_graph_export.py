@@ -107,7 +107,7 @@ def test_node_ids_follow_the_spec_and_the_palette(registry) -> None:
     assert types["JB-1"] == "ac_junction_box"
     assert types["M-MI1A"] == "pv_module"
     micro = next(n for n in graph["nodes"] if n["id"] == "MI1")
-    assert micro["values"] == {"model": "GROWATT-NEO-2000M-X2"}
+    assert micro["values"] == {"model": spec_to_graph_model(spec)}
 
 
 def test_an_unknown_model_is_reported(registry) -> None:
@@ -131,3 +131,9 @@ def test_the_per_string_box_round_trips(registry) -> None:
         spec["dc_bos"]["disconnects"], keys
     )
     assert sorted(s["id"] for s in back.spec["dc_bos"]["spds"]) == ["DPS-S1", "DPS-S2"]
+
+
+def spec_to_graph_model(spec: dict[str, Any]) -> str:
+    """The catalogue id the sizing picked for the micro (its display model + manufacturer)."""
+    micro = next(i for i in spec["inverters"] if i["type"] == "micro")
+    return f"{micro['manufacturer'].upper()}-{micro['model']}"

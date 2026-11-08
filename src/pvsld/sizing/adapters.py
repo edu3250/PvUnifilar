@@ -152,6 +152,18 @@ def to_spec_inverter(
     )
 
 
+def _micro_ocpd_max_a(micro: Microinverter) -> float:
+    """The largest branch breaker: the manufacturer's, else the 240-4(d) limit of its trunks."""
+    from pvsld.core.tables import get_tables
+
+    small = get_tables("NOM-001-SEDE-2012").small_conductor_ocpd_limit_a
+    limits = [
+        cable.max_ocpd_a if cable.max_ocpd_a is not None else small.get(cable.size, 30.0)
+        for cable in micro.trunk_cables
+    ]
+    return max(limits)
+
+
 def to_spec_microinverter(
     micro: Microinverter, *, inverter_id: str, qty: int, ac_voltage_v: float, phases: int
 ) -> Inverter:
@@ -181,9 +193,10 @@ def to_spec_microinverter(
         vac_v=ac_voltage_v,
         phases=phases,  # type: ignore[arg-type]  # validated by the model; narrowed to 1 | 2 | 3
         iac_max_a=micro.max_ac_output_current_a,
-        ocpd_max_a=max(cable.max_ocpd_a for cable in micro.trunk_cables),
+        ocpd_max_a=_micro_ocpd_max_a(micro),
         vdc_max_v=micro.max_input_voltage_v,
-        vdc_start_v=micro.startup_voltage_v,
+        # Without a printed start voltage, the low end of the MPPT window.
+        vdc_start_v=micro.startup_voltage_v or low_v,
         pdc_max_w=micro.recommended_module_power_wp[1] * micro.mppt_count,
         mppt=mppt,
         isolation=micro.topology or "no declarado",
@@ -193,7 +206,12 @@ def to_spec_microinverter(
         micro=MicroData(
             ac_voltage_range_v=micro.ac_voltage_range_v,
             recommended_module_power_wp=micro.recommended_module_power_wp,
-            trunk_max_ocpd_a={cable.size: cable.max_ocpd_a for cable in micro.trunk_cables},
+            trunk_sizes=[cable.size for cable in micro.trunk_cables],
+            trunk_max_ocpd_a={
+                cable.size: cable.max_ocpd_a
+                for cable in micro.trunk_cables
+                if cable.max_ocpd_a is not None
+            },
             max_units_per_trunk=dict(micro.max_units_per_trunk),
             max_drop_cable_length_m=dict(micro.max_drop_cable_length_m),
         ),

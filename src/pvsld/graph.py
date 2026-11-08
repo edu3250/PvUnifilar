@@ -1322,7 +1322,10 @@ def _micro_side(
         if drawn:
             trunk_size = drawn[-1]
         else:
-            allowed = sorted(limits.trunk_max_ocpd_a, key=_awg_rank) or ["12 AWG", "10 AWG"]
+            allowed = sorted(limits.allowed_trunk_sizes, key=_awg_rank) or [
+                "12 AWG",
+                "10 AWG",
+            ]
             fits = [
                 size
                 for size in allowed

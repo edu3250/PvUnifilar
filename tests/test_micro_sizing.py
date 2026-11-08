@@ -14,6 +14,8 @@ from pvsld.sizing.micro_sizing import MicroCandidate, rank_key, split_branches
 from pvsld.sizing.report import format_report
 
 MODULE = "JINKO-JKM650N-66HL4M-BDV"
+GROWATT = [f"GROWATT-NEO-{w}M-X2" for w in (1600, 1800, 2000, 2250, 2500)]
+"""The cases below pin the Growatt family; ``test_auto_picks_across_brands`` covers "auto"."""
 
 
 @pytest.fixture(scope="module")
@@ -26,7 +28,7 @@ def _size(registry, modules: int, **extra: Any):
         {
             "template": load_quick_template(),
             "module": MODULE,
-            "microinverters": "auto",
+            "microinverters": GROWATT,
             "module_count_min": modules,
             "module_count_max": modules,
             **extra,
@@ -44,7 +46,7 @@ def test_fewest_branches_spread_evenly(units, capacity, expected) -> None:
 
 
 def test_the_model_range_holding_the_module_wins(registry) -> None:
-    micros = registry.microinverters()
+    micros = [m for m in registry.microinverters() if m.manufacturer == "Growatt"]
     ranked = sorted(micros, key=lambda m: rank_key(m, 650))
     # 650 W fits 2000 (400-670), 2250 and 2500; the smallest of them wins.
     assert [m.component_id for m in ranked][:3] == [
@@ -111,8 +113,11 @@ def test_a_127_v_service_rejects_every_micro(registry) -> None:
         {"template": template, "module": MODULE, "microinverters": "auto", "module_count_max": 8}
     )
     result = size_pv_system(request, registry)
-    assert not result.ok
-    assert {r.rule_id for r in result.rejected} == {"MIC-010"}
+    # Only the 120 V APsystems DS3-LV works phase to neutral at 127 V.
+    assert result.selected.micro_id == "APSYSTEMS-DS3-LV"
+    rejected = {r.config.inverter_id: r.rule_id for r in result.rejected}
+    assert rejected["GROWATT-NEO-2000M-X2"] == "MIC-010"
+    assert rejected["ENPHASE-IQ8HC-72-M-US"] == "MIC-010"
 
 
 def test_string_inverters_stay_the_default(registry) -> None:
@@ -140,3 +145,18 @@ def test_a_target_power_gives_the_closest_count(registry) -> None:
         }
     )
     assert size_pv_system(request, registry).selected.modules == 8  # 5000 / 650 = 7.7
+
+
+def test_auto_picks_across_brands(registry) -> None:
+    request = request_from_mapping(
+        {
+            "template": load_quick_template(),
+            "module": MODULE,
+            "microinverters": "auto",
+            "module_count_max": 8,
+        }
+    )
+    selected = size_pv_system(request, registry).selected
+    # 650 W fits the DS3-H (330-660 W, 1050 W) and the NEO 2000 (400-670 W); the smaller wins.
+    assert selected.micro_id == "APSYSTEMS-DS3-H"
+    assert selected.units == 4

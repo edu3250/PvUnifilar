@@ -1,0 +1,52 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per model.
+# Microinverter: 2 inputs, one PV module per input; 120 V output (phase to neutral, 1F-2H 127 V service).
+component_type: microinverter
+family_id: APSYSTEMS-DS3-LV
+manufacturer: APsystems
+model_family: DS3-LV
+mppt_count: 2
+inputs_per_mppt: 1                          # "2 canales de entrada con MPPT's independientes"
+max_input_voltage_v: 60
+operating_input_voltage_range_v: [26, 60]
+mppt_voltage_range_v: [27, 45]              # "Voltaje de seguimiento de potencia máxima"
+max_input_current_per_mppt_a: 18            # "18A x 2"
+max_short_circuit_current_per_mppt_a: 20    # "20A por entrada"
+mppt_efficiency_pct: 99.5
+grid: single_phase
+rated_ac_voltage_v: [120]
+ac_voltage_range_v: [105, 132]
+max_ac_current_reference_voltage_v: 120     # "Corriente de salida nominal 7.5A" at 120 V
+frequency_hz: [60]
+power_factor_range: [0.99, 0.99]            # "Ajuste del factor de potencia fijo >0.99"
+thd_max_pct: 3
+topology: Transformadores de alta frecuencia, aislados galvánicamente (as printed)
+night_power_w: 0.02
+communication: ZigBee cifrado
+operating_temp_c: [-40, 65]
+ip_rating: Tipo 6 (NEMA enclosure type, as printed)
+weight_kg: 4.3
+dimensions_mm: [283, 233, 39.5]
+trunk_cables:                               # "AC Bus Cable 10AWG(35A) / 12AWG(28A)": cable ampacities
+  - {size: 12 AWG}                          # owner criterion B: no largest breaker given
+  - {size: 10 AWG}
+variants:
+  - {component_id: APSYSTEMS-DS3-LV, recommended_module_power_wp: [330, 660], rated_ac_power_w: 900, max_apparent_power_va: 900, max_ac_output_current_a: 7.5, max_efficiency_pct: 95.7, max_units_per_trunk: {12 AWG: 3, 10 AWG: 4}}
+source:
+  filename: datasheet-mx-es-20251211.pdf
+  sha256: 1c40acc0fbbb65780447ac8c7925ae182c8114a1a93e4ba6708a1853e2e90da1
+  title: APsystems Micro inversor DS3-LV, ficha técnica región LATAM (datasheet-mx-es-20251211)
+  pages: [1, 2]
+  extraction_method: rendered_page
+  extraction_date: 2026-11-08
+  reviewed_by: edu3250
+  review_date: 2026-11-08
+  notes: >-
+    The owner provided the PDF on 2026-11-08. Values read from the rendered page 2. A 120 V model ("Voltaje de
+    salida nominal/Rango 120V/105-132V"), so it works on the 127 V phase-to-neutral service (1F-2H). The current is
+    printed at 120 V (7.5 A = 900 VA / 120 V); at 127 V the same power needs 7.09 A, so the printed value is the
+    conservative one and is kept. Owner criterion A: "Potencia de salida continua máxima 900VA" with a fixed power
+    factor > 0.99, so rated_ac_power_w = 900 (deduced). Owner criterion B: the AC bus cable figures (35 A, 28 A) are
+    cable ampacities, not a largest breaker. No start voltage is printed. The recommended module power is printed
+    "330Wp-660Wp+" (the first page says "módulos de hasta 670 W+"). Maximum efficiency 95.7 %. Frequency
+    59.3-60.5 Hz. Storage -40 to +85 °C. Up to 80 inverters per ECU. Compliance: UL1741 (IEEE1547); CSA C22.2
+    No. 107.1-16; NOM-001; NEC 2014/2017/2020 section 690.12 rapid shutdown. Warranty 12 years, 25 optional.

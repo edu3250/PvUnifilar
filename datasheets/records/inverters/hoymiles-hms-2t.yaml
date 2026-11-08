@@ -1,0 +1,55 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per model.
+# Microinverter: 2 inputs, one PV module per input; units join on an AC trunk cable (AC branch).
+component_type: microinverter
+family_id: HOYMILES-HMS-2T
+manufacturer: Hoymiles
+model_family: HMS-800/900/1000-2T
+mppt_count: 2
+inputs_per_mppt: 1                          # "Cada microinversor puede conectarse a 2 paneles como máximo"
+max_input_voltage_v: 65
+startup_voltage_v: 22
+mppt_voltage_range_v: [16, 60]
+max_short_circuit_current_per_mppt_a: 25    # "2 × 25"
+mppt_efficiency_pct: 99.8
+grid: single_phase
+rated_ac_voltage_v: [220, 230, 240]
+ac_voltage_range_v: [180, 275]
+max_ac_current_reference_voltage_v: 220     # owner criterion C: the 220 V column
+frequency_hz: [50, 60]
+power_factor_range: [-0.8, 0.8]             # "0,8 adelantado ... 0,8 atrasado"
+thd_max_pct: 3
+topology: Transformador de alta frecuencia (HF) aislado galvánicamente (as printed)
+night_power_w: 0.05
+communication: Sub-1G
+operating_temp_c: [-40, 65]
+ip_rating: IP67 (NEMA 6)
+weight_kg: 3.1
+dimensions_mm: [261, 223, 31]
+trunk_cables:                               # "Máximo de unidades por cada ramal de calibre AWG 10/12"
+  - {size: 12 AWG}                          # owner criterion B: no largest breaker given
+  - {size: 10 AWG}
+variants:
+  - {component_id: HOYMILES-HMS-800-2T, recommended_module_power_wp: [320, 500], rated_ac_power_w: 800, max_apparent_power_va: 800, max_ac_output_current_a: 3.64, max_efficiency_pct: 96.5, max_input_current_per_mppt_a: 14, max_units_per_trunk: {12 AWG: 5, 10 AWG: 8}}
+  - {component_id: HOYMILES-HMS-900-2T, recommended_module_power_wp: [360, 565], rated_ac_power_w: 900, max_apparent_power_va: 900, max_ac_output_current_a: 4.09, max_efficiency_pct: 96.5, max_input_current_per_mppt_a: 15, max_units_per_trunk: {12 AWG: 4, 10 AWG: 7}}
+  - {component_id: HOYMILES-HMS-1000-2T, recommended_module_power_wp: [400, 625], rated_ac_power_w: 1000, max_apparent_power_va: 1000, max_ac_output_current_a: 4.55, max_efficiency_pct: 96.5, max_input_current_per_mppt_a: 16, max_units_per_trunk: {12 AWG: 4, 10 AWG: 7}}
+source:
+  filename: Datasheet_HMS8001000__3_.pdf
+  sha256: 52239bc81e90c4c0a7d89e77b57b81e9b2d8388c048b6ba28a7ecfafef6d644f
+  title: Hoymiles HMS-800/900/1000-2T, ficha técnica del microinversor (Región América Latina V202109)
+  pages: [1, 2]
+  extraction_method: rendered_page
+  extraction_date: 2026-11-08
+  reviewed_by: edu3250
+  review_date: 2026-11-08
+  notes: >-
+    The owner provided the PDF on 2026-11-08. Values read from the rendered page 2. Owner criteria of 2026-11-08:
+    (A) the datasheet gives only the apparent power ("Alimentación nominal de salida (VA)") with a default power
+    factor > 0.99, so rated_ac_power_w = max_apparent_power_va (deduced, not printed); (B) no largest branch breaker
+    is printed, so trunk_cables carry no max_ocpd_a and the NOM 240-4(d) limit applies alone; (C) the units per
+    branch change with the AC voltage (HMS-800: 8/9/9 on 10 AWG and 5/5/6 on 12 AWG at 220/230/240 V), the record
+    keeps the 220 V column. The output current is printed as "Corriente nominal de salida" (3.64 / 3.48 / 3.33 A
+    at 220 / 230 / 240 V for the HMS-800) and matches VA / V; it is used as the continuous output current of NOM
+    690-8(a)(3). The efficiency is the "Eficiencia pico de la Comisión de Energía de California (CEC)" 96.5 %,
+    stored as max_efficiency_pct. The recommended module power is printed "320 a +500" ("Módulo de potencia de uso
+    común"). Frequency 50/45-55 or 60/55-65 Hz. Compliance: UL 1741, ABNT NBR 16150:2013, ABNT NBR 16149:2013.
+    Monitoring: Hoymiles S-Miles Cloud (DTU gateway). Rapid shutdown and an isolated transformer per the first page.
