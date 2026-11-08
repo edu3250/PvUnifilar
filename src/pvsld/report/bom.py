@@ -1,6 +1,7 @@
 """Bill of materials of an installation: what to buy, read from the specification.
 
-Quantities come from the spec: modules from the strings, protections from ``dc_bos`` and
+Quantities come from the spec: modules from the strings (or the microinverter inputs, with the
+units, their trunk cable, junction boxes and AC combiner), protections from ``dc_bos`` and
 ``ac_bos``, conductor and conduit lengths from the circuits (one way, no waste allowance). A
 device the catalogue chose carries its reference (``model``); otherwise its ratings describe it.
 """
@@ -61,9 +62,15 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
     lines: list[BomLine] = []
     add = lines.append
     by_module = {m.id: m for m in spec.modules}
-    for module_id in dict.fromkeys(s.module for s in spec.strings):
+    counts: dict[str, int] = {}
+    for string in spec.strings:
+        counts[string.module] = counts.get(string.module, 0) + string.n_series
+    for branch in spec.ac_branches:
+        for unit in branch.microinverters:
+            for module_id in unit.inputs.values():
+                counts[module_id] = counts.get(module_id, 0) + 1
+    for module_id, count in counts.items():
         m = by_module[module_id]
-        count = sum(s.n_series for s in spec.strings if s.module == module_id)
         add(
             BomLine(
                 "Generación",
@@ -77,12 +84,14 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
         add(
             BomLine(
                 "Generación",
-                "Inversor",
-                f"{inv.manufacturer} {inv.model}, {_g(inv.pac_w / 1000)} kW, {_g(inv.vac_v)} V",
+                "Microinversor" if inv.type == "micro" else "Inversor",
+                f"{inv.manufacturer} {inv.model}, {_g(inv.pac_w / 1000)} kW, {_g(inv.vac_v)} V"
+                + (f", {len(inv.mppt)} entradas" if inv.type == "micro" else ""),
                 inv.qty,
                 "pza",
             )
         )
+    lines += _micro_lines(spec)
 
     dc = spec.dc_bos
     fuses = [d for d in dc.disconnects if d.id.startswith(STRING_FUSE)]
@@ -241,6 +250,47 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
                 "Medición",
                 "Medidor bidireccional" if meter.bidirectional else "Medidor",
                 f"Lo instala {meter.owner}",
+                1,
+                "pza",
+            )
+        )
+    return lines
+
+
+def _micro_lines(spec: PvSystemSpec) -> list[BomLine]:
+    """Trunk cable by size (spacing x units of each branch), junction boxes, AC combiner."""
+    if not spec.ac_branches:
+        return []
+    group = "Microinversores"
+    trunk: dict[str, float] = {}
+    for branch in spec.ac_branches:
+        length = branch.spacing_m * len(branch.microinverters)
+        trunk[branch.trunk_size] = trunk.get(branch.trunk_size, 0.0) + length
+    lines = [
+        BomLine(
+            group,
+            f"Cable troncal {size}",
+            "Cable troncal de CA del fabricante (aprox.: separación × microinversores)",
+            round(length, 1),
+            "m",
+        )
+        for size, length in trunk.items()
+    ]
+    lines.append(
+        BomLine(
+            group,
+            "Caja de conexiones de CA",
+            "Fin del cable troncal, una por rama",
+            len(spec.ac_branches),
+            "pza",
+        )
+    )
+    if spec.ac_combiner is not None:
+        lines.append(
+            BomLine(
+                group,
+                "Caja combinadora de CA",
+                f"{spec.ac_combiner.id}: ITM de rama y DPS de CA",
                 1,
                 "pza",
             )
