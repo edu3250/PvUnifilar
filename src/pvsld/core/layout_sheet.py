@@ -51,6 +51,7 @@ from pvsld.core.model import (
     RULEPACK_ID,
     SCHEMA_VERSION,
     Circuit,
+    Inverter,
     Ocpd,
     PvSystemSpec,
 )
@@ -473,6 +474,154 @@ def _symbology(
     return samples, texts
 
 
+# --- Microinverter designs (Stage 3.10.4) --------------------------------------------------------
+
+
+def _module_count(spec: PvSystemSpec) -> int:
+    micro = sum(len(u.inputs) for b in spec.ac_branches for u in b.microinverters)
+    return sum(s.n_series for s in spec.strings) + micro
+
+
+def _micro(spec: PvSystemSpec) -> Inverter:
+    return next(i for i in spec.inverters if i.type == "micro")
+
+
+def _micro_memory(spec: PvSystemSpec, derived: Derived) -> list[str]:
+    site = spec.project.site
+    micro = _micro(spec)
+    module = spec.modules[0]
+    mppt = micro.mppt[0]
+    voc = calc.voc_max_module_v(module, site.t_min_c, spec.standards.voc_method)
+    vmp_hot = calc.vmp_module_v(module, derived.t_cell_max_c)
+    data = micro.micro
+    low, high = data.recommended_module_power_wp if data else (0.0, 0.0)
+    lines = [
+        f"CD:  Voc módulo = {_n(voc, 2)} V a {_g(site.t_min_c)} °C <= {_g(micro.vdc_max_v)} V ; "
+        f"Isc {_n(module.isc_a, 2)} A <= {_g(mppt.isc_max_a)} A por entrada (sin 1.25)  OK",
+        f"      Vmp = {_n(vmp_hot)} V (celda a {_g(derived.t_cell_max_c)} °C), MPPT "
+        f"{_g(mppt.vmin_v)}-{_g(mppt.vmax_v)} V ; módulo {_g(module.pmax_w)} W, recomendado "
+        f"{_g(low)}-{_g(high)} W",
+    ]
+    ocpds = {o.id: o for o in spec.ac_bos.ocpds}
+    parts = []
+    for branch in spec.ac_branches:
+        n = len(branch.microinverters)
+        current = n * micro.iac_max_a
+        parts.append(
+            f"{branch.id} {n}x{_g(micro.iac_max_a)} A x 1.25 = {_n(1.25 * current, 1)} A -> "
+            f"{_g(ocpds[branch.ocpd].rating_a)} A ({branch.trunk_size})"
+        )
+    for index in range(0, len(parts), 2):
+        prefix = "CA:  " if index == 0 else "      "
+        lines.append(prefix + " ; ".join(parts[index : index + 2]) + "  (690-8, 240-4(d))")
+    combiner = spec.ac_combiner
+    if combiner is not None:
+        total = sum(len(b.microinverters) for b in spec.ac_branches) * micro.iac_max_a
+        main = ocpds[combiner.main_ocpd]
+        lines.append(
+            f"      {combiner.id}: {_n(total, 2)} A x 1.25 = {_n(1.25 * total, 1)} A -> "
+            f"{main.id} {main.poles}P x {_g(main.rating_a)} A  OK"
+        )
+    poc = spec.ac_bos.point_of_connection
+    panel = next(p for p in spec.ac_bos.panels if p.id == poc.panel)
+    ratings = {o.id: o.rating_a for o in spec.ac_bos.ocpds}
+    ratings.update({b.id: b.rating_a for b in spec.ac_bos.main_breakers})
+    sources = [panel.main_ocpd] + [
+        o.id for o in spec.ac_bos.ocpds if o.backfed and o.at == panel.id
+    ]
+    total_a = sum(ratings[name] for name in dict.fromkeys(sources))
+    limit = 1.2 * panel.bus_a
+    lines.append(
+        f"      Regla 120 %: {_g(panel.bus_a)} A x 1.20 = {_g(limit)} A >= {_g(total_a)} A  "
+        f"{'OK' if total_a <= limit else 'NO CUMPLE'} ; CD/CA = {_n(derived.dc_ac_ratio, 2)}"
+    )
+    grounding = spec.grounding
+    electrode = grounding.electrodes[0]
+    egc = sorted({c.egc.size for c in spec.circuits})
+    lines.append(
+        f"T:   Tierra de equipo {', '.join(egc)} ; GEC CA {grounding.gec_ac} (250-66) ; "
+        f"electrodo {electrode.type} {_g(electrode.length_m)} m <= "
+        f"{_g(grounding.design_resistance_ohm)} Ω"
+    )
+    return lines
+
+
+def _micro_circuit1(spec: PvSystemSpec, derived: Derived) -> tuple[str, str, list[str]]:
+    micro = _micro(spec)
+    values = {c.circuit_id: c for c in derived.circuits}
+    circuits = {c.from_.split(".", 1)[0]: c for c in spec.circuits}
+    ocpds = {o.id: o for o in spec.ac_bos.ocpds}
+    units = sum(len(b.microinverters) for b in spec.ac_branches)
+    title = "RAMAS DE MICROINVERSORES -> ITM DE RAMA (CA)"
+    subtitle = (
+        f"{units} microinversores en {len(spec.ac_branches)} rama(s), "
+        f"{_g(micro.vac_v)} Vca {PHASES[micro.phases]} + tierra"
+    )
+    first = circuits.get(spec.ac_branches[0].id)
+    lines = _conductor_lines(spec, first)[:2] if first is not None else []
+    for branch in spec.ac_branches:
+        circuit = circuits.get(branch.id)
+        v = values.get(circuit.id) if circuit else None
+        ocpd = ocpds[branch.ocpd]
+        text = (
+            f"{branch.id}: {len(branch.microinverters)} micro(s), troncal {branch.trunk_size}, "
+            f"{ocpd.id} {ocpd.poles}x{_g(ocpd.rating_a)} A"
+        )
+        if circuit is not None and v is not None:
+            text += f", {circuit.conductors.size} L={_g(circuit.length_m)} m"
+            if v.vd_pct is not None:
+                text += f", ΔV {_n(v.vd_pct, 2)} %"
+        lines.append(text)
+    return title, subtitle, lines
+
+
+def _micro_circuit2(spec: PvSystemSpec, derived: Derived) -> tuple[str, str, list[str]]:
+    micro = _micro(spec)
+    combiner = spec.ac_combiner
+    spds = _devices([f"{s.id} {s.spd_type} en {s.at}" for s in spec.ac_bos.spds])
+    subtitle = f"{_g(micro.vac_v)} Vca, {PHASES[micro.phases]} + tierra, 60 Hz{spds}"
+    if combiner is None:
+        ocpds = {o.id: o for o in spec.ac_bos.ocpds}
+        breakers = ", ".join(f"{b.ocpd} {_g(ocpds[b.ocpd].rating_a)} A" for b in spec.ac_branches)
+        panel = spec.ac_bos.point_of_connection.panel
+        return (
+            "ITM DE RAMA EN EL CENTRO DE CARGA (CA)",
+            subtitle,
+            [
+                f"ITM de rama en {panel}: {breakers}",
+                "Conexión del lado de la carga, extremo opuesto al principal",
+            ],
+        )
+    circuit = next((c for c in spec.circuits if c.from_ == combiner.id), None)
+    main = next(o for o in spec.ac_bos.ocpds if o.id == combiner.main_ocpd)
+    lines: list[str] = []
+    if circuit is not None:
+        v = {c.circuit_id: c for c in derived.circuits}.get(circuit.id)
+        lines += _conductor_lines(spec, circuit)
+        if v is not None and v.i_max_a is not None:
+            lines.append(
+                f"Idis = {_n(v.i_max_a, 2)} A -> {main.id} {main.poles}x{_g(main.rating_a)} A"
+                + (f"   ΔV = {_n(v.vd_pct, 2)} %" if v.vd_pct is not None else "")
+            )
+    return "CAJA COMBINADORA -> ITM FV, CENTRO DE CARGA (CA)", subtitle, lines
+
+
+def _micro_inverter_lines(spec: PvSystemSpec) -> list[str]:
+    micro = _micro(spec)
+    mppt = micro.mppt[0]
+    return [
+        micro.manufacturer.upper(),
+        micro.model,
+        f"Microinversor, {PHASES[micro.phases]}",
+        f"{micro.qty} x {_thousands(micro.pac_w)} W = {_thousands(micro.qty * micro.pac_w)} W",
+        f"{_g(micro.vac_v)} Vca 60 Hz  Imáx: {_g(micro.iac_max_a)} A c/u",
+        f"{_g(micro.vdc_max_v)} V   MPPT: {_g(mppt.vmin_v)}-{_g(mppt.vmax_v)} V",
+        f"{_g(mppt.imax_a)} A   Icc máx: {_g(mppt.isc_max_a)} A por entrada",
+        f"{len(micro.mppt)} entrada(s), un módulo por entrada",
+        NO_VALUE,
+    ]
+
+
 def _clear_of_schedule(placement: Placement, schedule: Table) -> Placement:
     """Lift the earthing bus and its two GEC labels when the schedule reaches the electrode's label.
 
@@ -542,7 +691,14 @@ def build_sheet_diagram(
         raise LayoutError(f"unsupported layout template {spec.layout.template!r}")
     derived = derived or calc.derive(spec)
     schedule = _protections(spec)
-    schematic = build_schematic(spec, derived, _clear_of_schedule(PLACEMENT, schedule))
+    micro = bool(spec.ac_branches)
+    if micro:
+        from pvsld.core.layout_micro import build_micro_schematic
+
+        ground_y = max(PLACEMENT.ground[1], schedule.y_top + GROUND_LABEL_DROP_MM)
+        schematic = build_micro_schematic(spec, derived, PLACEMENT, ground_y=ground_y)
+    else:
+        schematic = build_schematic(spec, derived, _clear_of_schedule(PLACEMENT, schedule))
     i1 = schematic.i1
 
     # Circuit markers: 1 on each PV string conductor, 2 on the inverter output.
@@ -551,10 +707,15 @@ def build_sheet_diagram(
     circles: list[CircleItem] = []
     marker_texts: list[TextItem] = []
     for conn in schematic.connections:
-        number = {"pv_source": "1", "inverter_output": "2"}.get(conn.kind)
+        if micro:  # 1 on each branch home run, 2 on the combiner output
+            number = "2" if conn.circuit_id == "C-CCA" else "1"
+        else:
+            number = {"pv_source": "1", "inverter_output": "2"}.get(conn.kind)
         if number is None or conn.circuit_id is None:  # one marker per circuit, on its first run
             continue
         a, b = conn.points[0], conn.points[1]
+        if micro and number == "2":  # the combiner output is the last run, from the bus
+            a, b = conn.points[-2], conn.points[-1]
         centre = Point(rnd((a.x + b.x) / 2), rnd(a.y + radius + 1.8))
         circles.append(CircleItem(layers.TAGS, centre.x, centre.y, radius))
         marker_texts.append(
@@ -562,9 +723,9 @@ def build_sheet_diagram(
         )
 
     fields = _Fields(template)
-    n_modules, _summary = _strings_summary(spec)
+    n_modules = _module_count(spec)
     module = spec.modules[0]
-    inverter = spec.inverters[0]
+    inverter = _micro(spec) if micro else spec.inverters[0]
     utility = spec.utility
     tb = spec.title_block
     level = "BAJA" if utility.voltage_level == "BT" else "MEDIA"
@@ -597,21 +758,23 @@ def build_sheet_diagram(
     fields.fit("owner.rpu", utility.rpu, BLANK)
     fields.set("owner.service", _service(spec))
     fields.set("capacity.pdc", f"{_thousands(derived.kwp_total * 1000)} Wp")
-    fields.set("capacity.pac", f"{_thousands(inverter.pac_w)} W")
+    fields.set("capacity.pac", f"{_thousands(inverter.pac_w * inverter.qty)} W")
     fields.set("capacity.ratio", _n(derived.dc_ac_ratio, 2))
     fields.set("capacity.energy", "______ kWh/año")
 
-    fields.lines("memory", _memory(spec, derived, i1))
+    fields.lines("memory", _micro_memory(spec, derived) if micro else _memory(spec, derived, i1))
     fields.lines("notes", _notes(spec, derived))
-    for prefix, (title, subtitle, lines) in (
-        ("circuit1", _circuit_dc(spec, derived)),
-        ("circuit2", _circuit_ac(spec, derived, i1)),
-    ):
+    boxes = (
+        (_micro_circuit1(spec, derived), _micro_circuit2(spec, derived))
+        if micro
+        else (_circuit_dc(spec, derived), _circuit_ac(spec, derived, i1))
+    )
+    for prefix, (title, subtitle, lines) in zip(("circuit1", "circuit2"), boxes, strict=True):
         fields.set(f"{prefix}.title", title)
         fields.set(f"{prefix}.subtitle", subtitle)
         fields.lines(prefix, lines)
     fields.lines("module", _module_lines(spec))
-    fields.lines("inverter", _inverter_lines(spec))
+    fields.lines("inverter", _micro_inverter_lines(spec) if micro else _inverter_lines(spec))
     fields.set("symbology.title", "SIMBOLOGÍA (CFE G0100-04 / NMX-J-136-ANCE)")
 
     company = responsible.company.upper() if responsible.company else None
@@ -621,7 +784,8 @@ def build_sheet_diagram(
         "project",
         f"PROYECTO: SFVI DE {_kwp(derived.kwp_total)} kWp  -  {n_modules} x "
         f"{module.manufacturer.split()[0].upper()} {_g(module.pmax_w)} Wp + "
-        f"{inverter.manufacturer.upper()} {inverter.model}",
+        + (f"{inverter.qty} x " if micro else "")
+        + f"{inverter.manufacturer.upper()} {inverter.model}",
     )
     contact = " / ".join(part for part in (client.phone, client.email) if part)
     fields.fit("design.name", responsible.name, BLANK)

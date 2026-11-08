@@ -48,6 +48,7 @@ from pvsld.core.model import (
     Meter,
     Ocpd,
     Panel,
+    PointOfConnection,
     PvSystemSpec,
     Raceway,
     address_text,
@@ -1369,6 +1370,21 @@ def build_schematic(spec: PvSystemSpec, derived: Derived, placement: Placement) 
             },
         )
     )
+    instances += service_instances(spec, placement, i2, meter, panel)
+    instances.append(ground_instance(spec, placement.ground))
+    string_out = {
+        i.comp_id: i.port_xy("OUT") for i in instances if i.comp_id in {s.id for s in spec.strings}
+    }
+    return _finish_schematic(
+        spec, derived, placement, inverter, instances, string_out, i1, i2, meter, panel, poc
+    )
+
+
+def service_instances(
+    spec: PvSystemSpec, placement: Placement, i2: MainBreaker, meter: Meter, panel: Panel
+) -> list[SymbolInstance]:
+    """The load centre, the service main, the fiscal meter and the grid, on the AC row."""
+    instances: list[SymbolInstance] = []
     instances.append(
         _instance(
             "PVSLD_PANEL",
@@ -1437,26 +1453,41 @@ def build_schematic(spec: PvSystemSpec, derived: Derived, placement: Placement) 
             },
         )
     )
+    return instances
+
+
+def ground_instance(spec: PvSystemSpec, xy: tuple[float, float]) -> SymbolInstance:
+    """The ground electrode with its type, length and design resistance."""
     electrode = spec.grounding.electrodes[0]
-    instances.append(
-        _instance(
-            "PVSLD_GND",
-            GROUND_COMP_ID,
-            *placement.ground,
-            {
-                "TAG": GROUND_COMP_ID,
-                "DESC": "Electrodo de puesta a tierra",
-                "SPEC": f"{electrode.type.capitalize()} {_n(electrode.length_m, 2)} m; "
-                f"≤ {_g(spec.grounding.design_resistance_ohm)} Ω",
-                "ELECTRODE": electrode.type,
-                "R_OHM": _g(spec.grounding.design_resistance_ohm),
-                "GEC_SIZE": spec.grounding.gec_dc,
-            },
-        )
+    return _instance(
+        "PVSLD_GND",
+        GROUND_COMP_ID,
+        *xy,
+        {
+            "TAG": GROUND_COMP_ID,
+            "DESC": "Electrodo de puesta a tierra",
+            "SPEC": f"{electrode.type.capitalize()} {_n(electrode.length_m, 2)} m; "
+            f"≤ {_g(spec.grounding.design_resistance_ohm)} Ω",
+            "ELECTRODE": electrode.type,
+            "R_OHM": _g(spec.grounding.design_resistance_ohm),
+            "GEC_SIZE": spec.grounding.gec_dc,
+        },
     )
-    string_out = {
-        i.comp_id: i.port_xy("OUT") for i in instances if i.comp_id in {s.id for s in spec.strings}
-    }
+
+
+def _finish_schematic(
+    spec: PvSystemSpec,
+    derived: Derived,
+    placement: Placement,
+    inverter: Inverter,
+    instances: list[SymbolInstance],
+    string_out: dict[str, Point],
+    i1: Ocpd,
+    i2: MainBreaker,
+    meter: Meter,
+    panel: Panel,
+    poc: PointOfConnection,
+) -> Schematic:
     dc = _dc_devices(spec, inverter, placement, string_out)
     dc_chains = dc.chains
     spd_instance = dc.spd

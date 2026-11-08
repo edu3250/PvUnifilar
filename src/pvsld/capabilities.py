@@ -118,8 +118,9 @@ CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "drawing.microinverters",
         "Plano con microinversores",
-        "pending",
-        "La plantilla del plano (plugin) dibuja solo inversores de cadena.",
+        "supported",
+        "Plantilla A3 (a3_plantilla_v1): cada rama en un renglón con sus módulos, troncal y caja "
+        "de conexiones, ITM de rama y caja combinadora; hasta 8 microinversores en 3 ramas.",
     ),
     Capability(
         "utility.system",
