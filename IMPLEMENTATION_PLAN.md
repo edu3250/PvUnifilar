@@ -892,7 +892,12 @@ inverters, with the manufacturer's trunk-cable and drop-cable tables; Growatt NE
 **Status**: In Progress
 
 ##### Stage 3.9.2: microinverter rules (module inputs, service voltage, AC branch)
-**Status**: Not Started
+**Goal**: pure rule functions in `pvsld.sizing.micro`: MIC-001..005 module on each input (Voc cold,
+Isc without 1.25, Imp clipping info, recommended power info/warning, hot Vmp), MIC-010 service
+voltage inside the AC window, MIC-011..013 AC branch (1.25 x sum <= breaker <= 240-4(d), then
+the manufacturer cap and trunk sizes), VD-002 daisy-chain trunk drop, MIC-014 drop-cable length.
+**Tests**: tests/test_micro_rules.py (the owner's NOM / Growatt tables of 2026-11-07).
+**Status**: In Progress
 
 ##### Stage 3.9.3: spec AC branches, validation, evaluate_draft / evaluate_choices
 **Status**: Not Started
