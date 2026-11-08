@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Microinverter sizing: `size_pv_system` designs with microinverters when the request names them (`microinverters`: ids or `"auto"`; string inverters stay the default) and, on request, an AC combiner box (`ac_combiner`). It picks the smallest model whose recommended module power holds the module, the units (free inputs on the last one are warning MIC-015), the fewest AC branches with the units spread evenly and the smallest trunk per branch, the branch breakers and home-run conductors, and validates the schema 0.2.0 specification. The result carries a `MicroCandidate`; the MCP and CLI texts list the branches. `routing.micro_spacing_m` overrides the default spacing (1.2 m per connected module).
+
 ## [0.8.0] - 2026-11-07
 
 ### Changed

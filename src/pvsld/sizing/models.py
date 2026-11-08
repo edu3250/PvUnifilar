@@ -63,6 +63,12 @@ class Routing(BaseModel):
     )
     tilt_deg: float = Field(default=20, ge=0, le=90)
     azimuth_deg: float = Field(default=180, ge=0, le=360)
+    micro_spacing_m: float | None = Field(
+        default=None,
+        gt=0,
+        lt=100,
+        description="Trunk length between two microinverters; default 1.2 m per connected module",
+    )
 
 
 class SizingRequest(BaseModel):
@@ -79,6 +85,16 @@ class SizingRequest(BaseModel):
     module_count_min: int | None = Field(default=None, gt=0, description="Total modules, lower")
     module_count_max: int | None = Field(default=None, gt=0, description="Total modules, upper")
     optimizers_on_all_modules: bool = False
+    microinverters: list[str] | Literal["auto"] | None = Field(
+        default=None,
+        description="Design with microinverters: catalogue ids to evaluate or 'auto' for all; "
+        "None (default) designs with string inverters (owner: micros only when asked for)",
+    )
+    ac_combiner: bool = Field(
+        default=False,
+        description="Microinverter designs: put the branch breakers in an AC combiner box with "
+        "one main breaker to the load centre (owner: only on request)",
+    )
     n_strings: int | None = Field(
         default=None, gt=0, description="Fix the number of strings (professional mode)"
     )
@@ -429,13 +445,14 @@ class SizingResult:
     module_id: str
     objective: str
     target_dc_power_w: float | None
-    candidates: tuple[Candidate, ...]
+    candidates: tuple[Any, ...]
+    """``Candidate`` (string inverters) or ``MicroCandidate`` (microinverters), best first."""
     rejected: tuple[Rejection, ...]
     assumptions: tuple[str, ...]
     inverters_evaluated: tuple[str, ...]
 
     @property
-    def selected(self) -> Candidate | None:
+    def selected(self) -> Any:
         return self.candidates[0] if self.candidates else None
 
     @property

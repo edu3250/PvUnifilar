@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from pvsld.core.severity import Severity
+from pvsld.sizing.micro_sizing import MicroCandidate
 from pvsld.sizing.models import Candidate, Rejection, SizingResult
 
 
@@ -16,7 +17,12 @@ def _kwp(watts: float) -> str:
     return f"{watts / 1000:.2f} kWp"
 
 
-def _describe(candidate: Candidate) -> str:
+def _describe(candidate: Candidate | MicroCandidate) -> str:
+    if isinstance(candidate, MicroCandidate):
+        return (
+            f"{candidate.micro_id} {candidate.label} ({candidate.modules} modules, "
+            f"{_kwp(candidate.p_dc_w)}, {candidate.free_inputs} free input(s))"
+        )
     m = candidate.metrics
     clipping = f", clipping {m.clipping_pct:.1f} %" if m.clipping_pct > 0 else ""
     return (
@@ -26,7 +32,35 @@ def _describe(candidate: Candidate) -> str:
     )
 
 
-def _selected_section(candidate: Candidate) -> list[str]:
+def _micro_section(candidate: MicroCandidate) -> list[str]:
+    lines = [f"SELECTED: {_describe(candidate)}", f"  why: {candidate.explanation_es}"]
+    lines += [
+        f"  {b.branch_id}: {b.units} unit(s), trunk {b.trunk_size}, {b.current_a:.2f} A, breaker "
+        f"{b.ocpd_id} {b.ocpd_a:g} A{f' ({b.breaker_model})' if b.breaker_model else ''}, home "
+        f"run {b.home_run_size}, voltage drop {b.drop_pct:.2f} %"
+        for b in candidate.branches
+    ]
+    if candidate.combiner:
+        lines.append("  AC combiner box CCA-1, main breaker ITM-1 to the load centre")
+    return lines + _findings_lines(candidate)
+
+
+def _findings_lines(candidate: Candidate | MicroCandidate) -> list[str]:
+    lines = [f"  [{i.severity.value}] {i.rule_id}: {i.message_es}" for i in candidate.issues]
+    shown = {i.rule_id for i in candidate.issues}
+    lines += [
+        f"  [{f.severity.value}] {f.rule_id}: {f.message_es}"
+        for f in candidate.findings
+        if f.rule_id not in shown
+    ]
+    warnings = sum(1 for f in candidate.findings if f.severity is Severity.WARNING)
+    lines.append(f"  rule pack mx-gd-2026.10: 0 errors, {warnings} warnings")
+    return lines
+
+
+def _selected_section(candidate: Candidate | MicroCandidate) -> list[str]:
+    if isinstance(candidate, MicroCandidate):
+        return _micro_section(candidate)
     m, bos = candidate.metrics, candidate.bos
     lines = [
         f"SELECTED: {_describe(candidate)}",
@@ -66,15 +100,7 @@ def _selected_section(candidate: Candidate) -> list[str]:
         lines.append(
             f"  {d.position}: {d.device_id} {d.rating_a:g} A {d.voltage_v:g} V{kaic}{note}"
         )
-    for issue in candidate.issues:
-        lines.append(f"  [{issue.severity.value}] {issue.rule_id}: {issue.message_es}")
-    shown = {i.rule_id for i in candidate.issues}
-    for finding in candidate.findings:
-        if finding.rule_id not in shown:
-            lines.append(f"  [{finding.severity.value}] {finding.rule_id}: {finding.message_es}")
-    warnings = sum(1 for f in candidate.findings if f.severity is Severity.WARNING)
-    lines.append(f"  rule pack mx-gd-2026.10: 0 errors, {warnings} warnings")
-    return lines
+    return lines + _findings_lines(candidate)
 
 
 def _rejection_section(rejected: tuple[Rejection, ...]) -> list[str]:
@@ -113,6 +139,6 @@ def format_report(result: SizingResult) -> str:
         lines += _rejection_section(result.rejected)
     lines.append("ASSUMPTIONS AND TODO:")
     lines += [f"  - {text}" for text in result.assumptions]
-    if result.selected is not None:
+    if result.selected is not None and not isinstance(result.selected, MicroCandidate):
         lines += [f"  - TODO 3.4b: {text}" for text in result.selected.bos.todo]
     return "\n".join(lines)

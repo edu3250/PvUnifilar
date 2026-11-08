@@ -654,6 +654,8 @@ def size_pv_system(request: SizingRequest, registry: ComponentRegistry) -> Sizin
         spec_module = adapters.to_spec_module(module)
     except adapters.UnsupportedComponentError as error:
         raise SizingInputError(str(error)) from error
+    if request.microinverters is not None:
+        return _size_micro(request, registry, module, spec_module)
     inverter_ids = (
         [i.component_id for i in registry.inverters()]
         if request.inverters == "auto"
@@ -819,6 +821,51 @@ def size_pv_system(request: SizingRequest, registry: ComponentRegistry) -> Sizin
         rejected=tuple(rejected),
         assumptions=tuple(assumptions),
         inverters_evaluated=tuple(inverter_ids),
+    )
+
+
+def _size_micro(
+    request: SizingRequest,
+    registry: ComponentRegistry,
+    module: CatalogueModule,
+    spec_module: Any,
+) -> SizingResult:
+    from pvsld.sizing.micro_sizing import (
+        MICRO_ASSUMPTIONS,
+        OBJECTIVE_MICRO,
+        module_count,
+        size_micro_system,
+    )
+
+    standards = _standards(request.template)
+    ac_breakers: list[AcBreaker] = (
+        registry.ac_breakers()
+        if request.ac_breakers == "auto"
+        else [_lookup(registry, name, AcBreaker, "ac_breaker") for name in request.ac_breakers]
+    )
+    main_breakers: list[AcBreaker] = (
+        [_lookup(registry, request.main_breaker, AcBreaker, "ac_breaker")]
+        if request.main_breaker is not None
+        else registry.ac_breakers()
+    )
+    candidates, rejected, evaluated = size_micro_system(
+        request,
+        registry,
+        module=module,
+        spec_module=spec_module,
+        standards=standards,
+        tables=get_tables(standards.nom_edition),
+        ac_breakers=ac_breakers,
+        main_breakers=main_breakers,
+    )
+    return SizingResult(
+        module_id=module.component_id,
+        objective=OBJECTIVE_MICRO,
+        target_dc_power_w=module_count(request, module) * module.pmax_w,
+        candidates=tuple(candidates),
+        rejected=tuple(rejected),
+        assumptions=(*adapters.ASSUMPTIONS[1:], ITM_ASSUMPTION, *MICRO_ASSUMPTIONS),
+        inverters_evaluated=tuple(evaluated),
     )
 
 

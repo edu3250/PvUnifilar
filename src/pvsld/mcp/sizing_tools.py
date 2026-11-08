@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 from pvsld.catalogue.cli import _rating
 from pvsld.catalogue.registry import Component, ComponentRegistry
 from pvsld.resources import data_path
-from pvsld.sizing import Candidate, SizingResult
+from pvsld.sizing import SizingResult
+from pvsld.sizing.micro_sizing import MicroCandidate
 
 __all__ = [
     "CATALOGUE_DIR_ENV",
@@ -182,7 +183,17 @@ def _grouped_rejections(result: SizingResult) -> list[dict[str, Any]]:
     ]
 
 
-def _alternative(candidate: Candidate) -> dict[str, Any]:
+def _alternative(candidate: Any) -> dict[str, Any]:
+    if isinstance(candidate, MicroCandidate):
+        return {
+            "rank": candidate.rank,
+            "inverter": candidate.micro_id,
+            "config": candidate.label,
+            "modules": candidate.modules,
+            "kwp": round(candidate.p_dc_w / 1000, 3),
+            "dc_ac": round(candidate.p_dc_w / candidate.p_ac_w, 2),
+            "warnings": [issue.rule_id for issue in candidate.warnings],
+        }
     metrics = candidate.metrics
     return {
         "rank": candidate.rank,
@@ -198,7 +209,7 @@ def _alternative(candidate: Candidate) -> dict[str, Any]:
 def sizing_output(result: SizingResult) -> SizingOutput:
     selected = result.selected
     assumptions = list(result.assumptions)
-    if selected is not None:
+    if selected is not None and not isinstance(selected, MicroCandidate):
         assumptions += [f"TODO 3.4b: {text}" for text in selected.bos.todo]
     if selected is None:
         return SizingOutput(
@@ -217,13 +228,21 @@ def sizing_output(result: SizingResult) -> SizingOutput:
         )
     brief = selected.to_dict()
     brief.pop("rule_pack", None)
-    metrics = selected.metrics
+    if isinstance(selected, MicroCandidate):
+        headline = (
+            f"SELECTED: {selected.micro_id} {selected.label} ({selected.modules} modules, "
+            f"{selected.p_dc_w / 1000:.2f} kWp)"
+        )
+    else:
+        metrics = selected.metrics
+        headline = (
+            f"SELECTED: {selected.config.inverter_id} {selected.config.label} "
+            f"({metrics.p_dc_w / 1000:.2f} kWp, DC/AC {metrics.dc_ac_ratio:.2f})"
+        )
     return SizingOutput(
         ok=True,
         summary=(
-            f"SELECTED: {selected.config.inverter_id} {selected.config.label} "
-            f"({metrics.p_dc_w / 1000:.2f} kWp, DC/AC {metrics.dc_ac_ratio:.2f}); "
-            f"{len(result.candidates)} candidate(s), {len(result.rejected)} rejected."
+            f"{headline}; {len(result.candidates)} candidate(s), {len(result.rejected)} rejected."
         ),
         selected=brief,
         spec=selected.to_dict(include_spec=True)["spec"],
@@ -245,6 +264,16 @@ def sizing_text(output: SizingOutput) -> str:
         if selected.get("explanation_es"):
             lines.append(f"  why (tell the user): {selected['explanation_es']}")
         lines += [f"  warning {i['rule_id']}: {i['message_es']}" for i in selected["issues"]]
+        if selected.get("kind") == "microinverter":
+            lines += [
+                f"  {b['branch']}: {b['units']} unit(s), trunk {b['trunk_size']}, breaker "
+                f"{b['ocpd']} {b['ocpd_a']:g} A, home run {b['home_run_size']}, "
+                f"ΔV {b['drop_pct']:g} %"
+                for b in selected["branches"]
+            ]
+            if selected.get("ac_combiner"):
+                lines.append("  AC combiner box CCA-1 with main breaker ITM-1")
+            return "\n".join([*lines, *_tail(output)])
         bos = selected["bos"]
         dc_ocpd = bos["dc_ocpd"]
         string_ocpd = (
@@ -259,6 +288,12 @@ def sizing_text(output: SizingOutput) -> str:
             f"  {c['circuit_id']}: {c['size']}, I max {c['i_max_a']:g} A, ΔV {c['vd_pct']:g} %"
             for c in bos["conductors"]
         ]
+    return "\n".join([*lines, *_tail(output)])
+
+
+def _tail(output: SizingOutput) -> list[str]:
+    """Alternatives, rejections, assumptions and the next step."""
+    lines: list[str] = []
     if output.alternatives:
         lines.append("ALTERNATIVES:")
         lines += [
@@ -271,4 +306,4 @@ def sizing_text(output: SizingOutput) -> str:
         lines += [f"  {r['rule_id']} x{r['count']}: {r['example_es']}" for r in output.rejected]
     lines.append("ASSUMPTIONS: " + " | ".join(output.assumptions))
     lines.append(output.next_step)
-    return "\n".join(lines)
+    return lines
