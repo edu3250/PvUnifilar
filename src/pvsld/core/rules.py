@@ -8,8 +8,9 @@ published through :func:`rulepack_catalogue` for the future ``pvsld://rulepack/m
 MCP resource.
 
 Implemented in this version: VOLT-001, STR-001, STR-004, STR-007, CON-003, CON-006, PCC-002,
-MET-001, DIS-003 and DIS-004. The remaining rules of the vault pack (98 in total) arrive with
-later stages.
+MET-001, DIS-003 and DIS-004, plus the microinverter rules of schema 0.2.0 (MIC-001 to MIC-005,
+MIC-010 to MIC-014 and VD-002 for the AC branch trunk, :mod:`pvsld.core.micro`). The remaining
+rules of the vault pack (98 in total) arrive with later stages.
 
 Scope notes, where the vault definition needs data that schema 0.1.0 does not carry:
 
@@ -28,13 +29,15 @@ Scope notes, where the vault definition needs data that schema 0.1.0 does not ca
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from pvsld.core import calc
+from pvsld.core import micro as micro_rules
 from pvsld.core.calc import Derived
-from pvsld.core.model import PvSystemSpec
+from pvsld.core.model import Inverter, PvSystemSpec
 from pvsld.core.policy import DEFAULT_DC_AC_POLICY, DcAcPolicy
 from pvsld.core.severity import Severity
 from pvsld.core.tables import NomTables, get_tables
@@ -562,6 +565,220 @@ RULES: tuple[RuleDef, ...] = (
         check=_dis_004,
     ),
 )
+
+
+# --- Microinverters (schema 0.2.0) ---------------------------------------------------------------
+
+
+def connection_voltage_v(spec: PvSystemSpec, inverter: Inverter) -> float:
+    """The service voltage a unit is wired to: L-L for two energized conductors, else L-N."""
+    utility = spec.utility
+    if utility.system == "1F-2H" or inverter.phases >= 2:
+        return utility.nominal_voltage_v
+    return round(utility.nominal_voltage_v / math.sqrt(3))
+
+
+def _micro_findings(ctx: RuleContext) -> list[micro_rules.MicroFinding]:
+    """Every microinverter finding of the design (empty for a string-inverter design)."""
+    spec = ctx.spec
+    if not spec.ac_branches:
+        return []
+    site = spec.project.site
+    inverters = {i.id: i for i in spec.inverters}
+    modules = {m.id: m for m in spec.modules}
+    found: list[micro_rules.MicroFinding] = []
+    for inverter in inverters.values():
+        if inverter.type != "micro":
+            continue
+        limits = micro_rules.limits_from_spec(inverter)
+        used = dict.fromkeys(
+            module_id
+            for branch in spec.ac_branches
+            for unit in branch.microinverters
+            if unit.inverter == inverter.id
+            for module_id in unit.inputs.values()
+        )
+        own: list[micro_rules.MicroFinding] = []
+        for module_id in used:
+            own += micro_rules.module_input_findings(
+                limits,
+                modules[module_id],
+                t_min_c=site.t_min_c,
+                t_amb_max_c=site.t_amb_max_c,
+                voc_method=spec.standards.voc_method,
+            )
+        voltage = micro_rules.service_voltage_finding(limits, connection_voltage_v(spec, inverter))
+        if voltage is not None:
+            own.append(voltage)
+        found += [replace(f, subject=inverter.id) for f in own]
+    ratings = {o.id: o.rating_a for o in spec.ac_bos.ocpds}
+    home_runs = {calc_base(c.from_): c for c in spec.circuits if c.kind == "inverter_output"}
+    for branch in spec.ac_branches:
+        inverter = inverters[branch.microinverters[0].inverter]
+        limits = micro_rules.limits_from_spec(inverter)
+        units = len(branch.microinverters)
+        found += micro_rules.branch_findings(
+            limits,
+            branch_id=branch.id,
+            units=units,
+            trunk_size=branch.trunk_size,
+            ocpd_a=ratings.get(branch.ocpd),
+            tables=ctx.tables,
+        )
+        circuit = home_runs.get(branch.id)
+        if circuit is not None:
+            drop = micro_rules.trunk_drop_finding(
+                branch_id=branch.id,
+                drop_pct=micro_rules.trunk_drop_pct(
+                    limits,
+                    units=units,
+                    trunk_size=branch.trunk_size,
+                    spacing_m=branch.spacing_m,
+                    home_run_m=circuit.length_m,
+                    voltage_v=connection_voltage_v(spec, inverter),
+                    tables=ctx.tables,
+                    home_run_size=circuit.conductors.size,
+                ),
+                limit_pct=spec.standards.vd_limits_pct.ac,
+                trunk_size=branch.trunk_size,
+            )
+            if drop is not None:
+                found.append(drop)
+        for unit in branch.microinverters:
+            if unit.drop_cable is None:
+                continue
+            cable = micro_rules.drop_cable_finding(
+                limits, size=unit.drop_cable.size, length_m=unit.drop_cable.length_m
+            )
+            if cable is not None:
+                found.append(replace(cable, subject=unit.id))
+    return found
+
+
+def calc_base(endpoint: str) -> str:
+    """``INV1.A`` -> ``INV1``."""
+    return endpoint.split(".", maxsplit=1)[0]
+
+
+def _micro_check(rule_id: str) -> Callable[[RuleContext], Iterator[tuple[Severity, str, str]]]:
+    def check(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
+        for finding in _micro_findings(ctx):
+            if finding.rule_id == rule_id:
+                yield finding.severity, finding.subject, finding.message_es
+
+    return check
+
+
+_DATASHEET = Cite("Ficha técnica del microinversor", "datos de entrada y salida")
+_MANUAL = Cite("Manual de instalación del microinversor", "selección de protección y cable")
+
+MICRO_RULES: tuple[RuleDef, ...] = (
+    RuleDef(
+        id="MIC-001",
+        title_es="Voc del módulo en frío dentro de la entrada del microinversor",
+        severity="E",
+        basis=("NOM", "Fabricante"),
+        cites=(Cite("NOM-001-SEDE-2012", "690-7"), _DATASHEET),
+        mx_ids=(),
+        check=_micro_check("MIC-001"),
+    ),
+    RuleDef(
+        id="MIC-002",
+        title_es="Isc del módulo dentro de la entrada del microinversor (sin factor 1.25)",
+        severity="E",
+        basis=("Fabricante",),
+        cites=(_DATASHEET,),
+        mx_ids=(),
+        check=_micro_check("MIC-002"),
+    ),
+    RuleDef(
+        id="MIC-003",
+        title_es="Imp del módulo sobre la corriente máxima de entrada (recorte)",
+        severity="I",
+        basis=("Fabricante",),
+        cites=(_DATASHEET,),
+        mx_ids=(),
+        check=_micro_check("MIC-003"),
+    ),
+    RuleDef(
+        id="MIC-004",
+        title_es="Potencia del módulo dentro del rango recomendado del microinversor",
+        severity="I/W",
+        basis=("Fabricante",),
+        cites=(_DATASHEET,),
+        mx_ids=(),
+        check=_micro_check("MIC-004"),
+    ),
+    RuleDef(
+        id="MIC-005",
+        title_es="Vmp del módulo en caliente dentro de la ventana MPPT del microinversor",
+        severity="W",
+        basis=("Fabricante",),
+        cites=(_DATASHEET,),
+        mx_ids=(),
+        check=_micro_check("MIC-005"),
+    ),
+    RuleDef(
+        id="MIC-010",
+        title_es="Tensión del servicio dentro del rango de CA del microinversor",
+        severity="E",
+        basis=("Fabricante",),
+        cites=(_DATASHEET,),
+        mx_ids=(),
+        check=_micro_check("MIC-010"),
+    ),
+    RuleDef(
+        id="MIC-011",
+        title_es="ITM de la rama: 1.25 × suma de corrientes, dentro del límite del troncal",
+        severity="E",
+        basis=("NOM",),
+        cites=(
+            Cite("NOM-001-SEDE-2012", "690-8(a)(3)"),
+            Cite("NOM-001-SEDE-2012", "690-8(b)(1)"),
+            Cite("NOM-001-SEDE-2012", "240-4(d)"),
+            Cite("NOM-001-SEDE-2012", "240-6(a)"),
+        ),
+        mx_ids=(),
+        check=_micro_check("MIC-011"),
+    ),
+    RuleDef(
+        id="MIC-012",
+        title_es="Microinversores por rama dentro del tope del fabricante",
+        severity="E",
+        basis=("Fabricante",),
+        cites=(_MANUAL,),
+        mx_ids=(),
+        check=_micro_check("MIC-012"),
+    ),
+    RuleDef(
+        id="MIC-013",
+        title_es="Calibre del cable troncal contemplado por el fabricante",
+        severity="E",
+        basis=("Fabricante",),
+        cites=(_MANUAL,),
+        mx_ids=(),
+        check=_micro_check("MIC-013"),
+    ),
+    RuleDef(
+        id="MIC-014",
+        title_es="Longitud del cable desde el conector de CA del microinversor",
+        severity="E",
+        basis=("Fabricante",),
+        cites=(_MANUAL,),
+        mx_ids=(),
+        check=_micro_check("MIC-014"),
+    ),
+    RuleDef(
+        id="VD-002",
+        title_es="Caída de tensión de la rama de microinversores",
+        severity="W",
+        basis=("Diseño",),
+        cites=(Cite("NOM-001-SEDE-2012", "210-19(a) nota 4"),),
+        mx_ids=(),
+        check=_micro_check("VD-002"),
+    ),
+)
+RULES = RULES + MICRO_RULES
 
 
 def rulepack_catalogue() -> list[dict[str, Any]]:

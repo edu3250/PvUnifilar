@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Drawing a microinverter design raises a `LayoutError` that says the drawing is pending, instead of producing an incomplete sheet.
+
 ### Added
 
 - Solis S5-GC15K/20K/23K-LV three-phase inverters in the catalogue (3 MPPT, 2 inputs each, 32 A / 50 A per MPPT). The engine does not design three-phase services yet: the palette marks them `designable: false` with the reason, and `graph_to_spec` reports a three-phase inverter as `unsupported`.
 - Microinverter record type in the catalogue (`component_type: microinverter`, `pvsld.catalogue.Microinverter`), separate from string inverters: DC inputs with one module each, AC voltage window, and the manufacturer's tables of units per AC trunk cable, largest branch breaker and drop-cable length. Growatt NEO 1600M/1800M/2000M/2250M/2500M-X2 loaded (the 2250 keeps 2250 W: the datasheet's 2550 W exceeds its 2250 VA). The engine does not design with microinverters yet.
 - Microinverter rules (`pvsld.sizing.micro`, not used by the design flow yet): module on each input (MIC-001 cold Voc, MIC-002 Isc without the 1.25 factor, MIC-003 clipping, MIC-004 recommended module power, MIC-005 hot Vmp), service voltage inside the AC window (MIC-010), AC branch breaker at the next standard rating >= 1.25 x the sum of the output currents and within 240-4(d) of the trunk cable, then the manufacturer's units and breaker caps (MIC-011 to MIC-013), daisy-chain trunk voltage drop (VD-002) and drop-cable length (MIC-014).
+- Schema 0.2.0: microinverter designs. An inverter of type `micro` carries a `micro` block (AC voltage window, recommended module power, the manufacturer's trunk and drop-cable tables) and the new `ac_branches` section lists each AC branch: its units (`id`, model, the module on each input), trunk cable size and spacing, and branch breaker. `strings` is no longer required when a design has branches. Documents of schema 0.1.0 stay valid and string designs still declare 0.1.0.
+- Rule pack: MIC-001 to MIC-005, MIC-010 to MIC-014 and VD-002 for the AC branch trunk run in `validate_pv_design` and `evaluate_draft` (rules in `pvsld.core.micro`, shared with `pvsld.sizing.micro`). Derived values add the micro array power and the branch circuit current and daisy-chain voltage drop.
+- `evaluate_choices` checks each microinverter branch breaker (MIC-011: 1.25 x the sum of the output currents, within the trunk cable's limit; model and kAIC) and the branch circuit's conductor with its trunk voltage drop.
+- Capability matrix: `microinverters` supported (one model per design, no branch limit), `microinverters.ac_combiner`, `microinverters.mixed` and `drawing.microinverters` pending; limits add `max_micro_models` and `micro` in `inverter_types`.
+- `sizing.adapters.to_spec_microinverter` maps a catalogue microinverter to the spec.
 - Capability matrix: `dc_box.combined` (two strings paralleled after their fuses into one MPPT input, ENG-016) as pending, since no single-phase inverter in the catalogue takes two strings on one input.
 
 ## [0.7.3] - 2026-11-06

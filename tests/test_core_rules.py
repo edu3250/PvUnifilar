@@ -23,8 +23,23 @@ SUBSET = (
     "DIS-003",
     "DIS-004",
 )
-# STR-007 and CON-006 have no Mexican checklist item in the vault ("MX" column is "—").
-NO_CHECKLIST_ITEM = {"STR-007", "CON-006"}
+# Microinverter rules of schema 0.2.0 (Stage 3.9.3), after the S1 subset.
+MICRO = (
+    "MIC-001",
+    "MIC-002",
+    "MIC-003",
+    "MIC-004",
+    "MIC-005",
+    "MIC-010",
+    "MIC-011",
+    "MIC-012",
+    "MIC-013",
+    "MIC-014",
+    "VD-002",
+)
+# STR-007 and CON-006 have no Mexican checklist item in the vault ("MX" column is "—"), nor do
+# the microinverter rules (equipment and installation-manual limits).
+NO_CHECKLIST_ITEM = {"STR-007", "CON-006", *MICRO}
 
 
 def _ids(report: ValidationReport, severity: Severity | None = None) -> list[str]:
@@ -41,17 +56,17 @@ def _only(report: ValidationReport, rule_id: str) -> Finding:
 
 
 def test_pack_implements_exactly_the_implemented_subset() -> None:
-    assert tuple(rule.id for rule in RULES) == SUBSET
+    assert tuple(rule.id for rule in RULES) == SUBSET + MICRO
 
 
 def test_catalogue_documents_every_rule_in_spanish_with_citations() -> None:
     catalogue = rulepack_catalogue()
-    assert [entry["id"] for entry in catalogue] == list(SUBSET)
+    assert [entry["id"] for entry in catalogue] == [*SUBSET, *MICRO]
     for entry in catalogue:
         assert entry["title_es"]
         assert entry["mx_ids"] or entry["id"] in NO_CHECKLIST_ITEM
         assert entry["cites"]
-        assert entry["severity"] in {"E", "W", "E/W", "E/W/I"}
+        assert entry["severity"] in {"E", "W", "I", "E/W", "I/W", "E/W/I"}
         assert entry["basis"]
 
 

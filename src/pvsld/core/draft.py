@@ -37,12 +37,20 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from pvsld.capabilities import (
     INVERTER_DC_PORTS,
     MAX_INVERTERS,
+    MAX_MICRO_MODELS,
     MAX_STRINGS,
     SUPPORTED_INVERTER_TYPES,
 )
 from pvsld.core import calc
 from pvsld.core.calc import Derived
-from pvsld.core.model import RULEPACK_ID, SCHEMA_VERSION, Project, PvSystemSpec, parse_spec
+from pvsld.core.model import (
+    NO_ARRAY_PROBLEM,
+    RULEPACK_ID,
+    SCHEMA_VERSION,
+    Project,
+    PvSystemSpec,
+    parse_spec,
+)
 from pvsld.core.policy import DEFAULT_DC_AC_POLICY, DcAcPolicy
 from pvsld.core.rules import RULES, Finding, RuleDef, Severity, run_rules
 
@@ -229,6 +237,14 @@ def _schema_issues(error: ValidationError, data: Any) -> Iterator[DraftIssue]:
             # The cross-reference check of the root model: one issue per broken reference.
             message = str(item["msg"]).removeprefix("Value error, ")
             for problem in message.split("; "):
+                if problem == NO_ARRAY_PROBLEM:
+                    yield DraftIssue(
+                        category="missing",
+                        path="strings",
+                        message_es="Falta «strings» (o «ac_branches» en un diseño con "
+                        "microinversores).",
+                    )
+                    continue
                 yield DraftIssue(
                     category="invalid_structure",
                     path="(raíz)",
@@ -251,13 +267,30 @@ def _schema_issues(error: ValidationError, data: Any) -> Iterator[DraftIssue]:
 
 def _unsupported(spec: PvSystemSpec) -> Iterator[DraftIssue]:
     """What the schema accepts but the engine does not calculate or draw yet."""
-    inverter_ids = tuple(i.id for i in spec.inverters)
-    if len(spec.inverters) > MAX_INVERTERS:
+    micros = [i for i in spec.inverters if i.type == "micro"]
+    others = [i for i in spec.inverters if i.type != "micro"]
+    if len(others) > MAX_INVERTERS:
         yield DraftIssue(
             "unsupported",
             "inverters",
-            f"Por ahora el motor calcula y dibuja un solo inversor; hay {len(spec.inverters)}.",
-            inverter_ids,
+            f"Por ahora el motor calcula y dibuja un solo inversor; hay {len(others)}.",
+            tuple(i.id for i in others),
+        )
+    if len(micros) > MAX_MICRO_MODELS:
+        yield DraftIssue(
+            "unsupported",
+            "inverters",
+            f"Por ahora el motor calcula un solo modelo de microinversor por diseño; hay "
+            f"{len(micros)}.",
+            tuple(i.id for i in micros),
+        )
+    if micros and others:
+        yield DraftIssue(
+            "unsupported",
+            "inverters",
+            "Por ahora el motor no calcula microinversores junto con un inversor de cadena en el "
+            "mismo diseño.",
+            tuple(i.id for i in spec.inverters),
         )
     for index, inverter in enumerate(spec.inverters):
         if inverter.type not in SUPPORTED_INVERTER_TYPES:
@@ -265,10 +298,10 @@ def _unsupported(spec: PvSystemSpec) -> Iterator[DraftIssue]:
                 "unsupported",
                 f"inverters[{index}].type",
                 f"El inversor {inverter.id} es de tipo «{inverter.type}»; por ahora solo se "
-                "calculan inversores de cadena e híbridos.",
+                "calculan inversores de cadena, híbridos y microinversores.",
                 (inverter.id,),
             )
-        if inverter.qty > 1:
+        if inverter.qty > 1 and inverter.type != "micro":
             yield DraftIssue(
                 "unsupported",
                 f"inverters[{index}].qty",

@@ -110,7 +110,9 @@ def test_json_schema_is_2020_12_and_describes_the_root() -> None:
     schema = export_json_schema()
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert schema["title"] == "PvSystemSpec"
-    assert {"project", "modules", "inverters", "strings", "title_block"} <= set(schema["required"])
+    assert {"project", "modules", "inverters", "title_block"} <= set(schema["required"])
+    # Schema 0.2.0: a microinverter design has ac_branches instead of strings.
+    assert {"strings", "ac_branches"} <= set(schema["properties"])
     assert "from" in schema["$defs"]["Circuit"]["properties"]
 
 

@@ -24,6 +24,7 @@ Component           Values                                      Rule
 ``FUS-*``/``DCB-*`` ``ie_a`` (and ``model``); ``ue_v``             OCP-002; OCP-004
 ``DCD-CD1``         ``model``, ``ie_a``, ``ue_v``, ``poles``    DIS-002
 ITM-1 (PCC breaker) ``rating_a``; ``model``, ``kaic_ka``        OCP-005; OCP-006
+branch ITMs         ``rating_a``; ``model``, ``kaic_ka``        MIC-011; OCP-006
 ``main_breakers``   ``model``, ``kaic_ka``                      OCP-006
 circuits            ``conductors.size`` (+ ``egc``, ``neutral``) CON-002, VD-001/002
 raceways            ``raceway.trade_size_mm``                   CON-006
@@ -33,6 +34,9 @@ The rule ids follow the vault catalogue (aligned 2026-11-03): OCP-002 is the str
 current window, OCP-004 its voltage and breaking capacity, OCP-005 ITM-1's rating (lower bound
 only: the inverter's maximum OCPD is not checked, owner decision), OCP-006 interrupting ratings,
 DIS-002 the ratings of the box disconnect.
+A microinverter design (schema 0.2.0) has no DC box: each AC branch breaker is checked instead of
+ITM-1 (1.25 x the sum of the units' currents, within the trunk cable's limit), and a branch
+circuit's voltage drop runs along the daisy-chained trunk.
 The rest of the design (string voltages, the inverter, the AC side rules) is the rule pack's:
 :attr:`ChoiceReport.draft` carries its findings.
 """
@@ -54,6 +58,7 @@ from pvsld.catalogue import (
     UnknownComponentError,
 )
 from pvsld.core import calc
+from pvsld.core import micro as micro_rules
 from pvsld.core.draft import DraftReport, evaluate_draft
 from pvsld.core.model import Circuit, PvSystemSpec, Raceway
 from pvsld.core.policy import DEFAULT_DC_AC_POLICY, DcAcPolicy
@@ -684,8 +689,104 @@ class _Evaluator:
             )
         return None
 
+    def branch_breakers(self) -> None:
+        """MIC-011 / OCP-006 for the breaker of each microinverter AC branch."""
+        spec = self.spec
+        inverters = {i.id: i for i in spec.inverters}
+        ocpds = {o.id: o for o in spec.ac_bos.ocpds}
+        fault = spec.utility.available_fault_current_ka
+        for branch in spec.ac_branches:
+            ocpd = ocpds[branch.ocpd]
+            inverter = inverters[branch.microinverters[0].inverter]
+            limits = micro_rules.limits_from_spec(inverter)
+            units = len(branch.microinverters)
+            current = micro_rules.branch_current_a(limits, units)
+            minimum = calc.ocpd_min_a(current)
+            standard = micro_rules.branch_ocpd_a(limits, units, self.tables)
+            ceiling = micro_rules.branch_limit(limits, branch.trunk_size, self.tables).ocpd_limit_a
+            choice, found = bos.select_ac_breaker(
+                position=ocpd.id,
+                rating_a=standard,
+                poles=ocpd.poles,
+                voltage_v=AC_BREAKER_VOLTAGE_V,
+                fault_ka=fault,
+                breakers=self.registry.ac_breakers(),
+            )
+            for issue in found:
+                self.note(ocpd.id, issue)
+            why = (
+                f"El interruptor de la rama {branch.id} ({units} microinversores, 1.25 × "
+                f"{_n(current, 2)} A = {_n(minimum)} A, sin pasar {_g(ceiling)} A del troncal "
+                f"{branch.trunk_size}): "
+                + (
+                    f"{choice.device_id}, {_g(choice.rating_a)} A, {_g(choice.interrupting_ka)} kA."
+                    if choice
+                    else f"{_g(standard)} A."
+                )
+            )
+            problem: Problem | None = None
+            if ocpd.rating_a < minimum:
+                problem = (
+                    "MIC-011",
+                    Severity.ERROR,
+                    f"{ocpd.id}: {_g(ocpd.rating_a)} A es menor que 1.25 × {_n(current, 2)} A = "
+                    f"{_n(minimum)} A (NOM 690-8(b)(1)).",
+                )
+            elif ocpd.rating_a > ceiling:
+                problem = (
+                    "MIC-011",
+                    Severity.ERROR,
+                    f"{ocpd.id}: {_g(ocpd.rating_a)} A excede lo que protege el troncal "
+                    f"{branch.trunk_size} ({_g(ceiling)} A, 240-4(d) y fabricante).",
+                )
+            if ocpd.model is not None or choice is not None:
+                self.record(
+                    ocpd.id,
+                    "model",
+                    ocpd.model,
+                    rule_id="OCP-006",
+                    problem=None
+                    if ocpd.model is None
+                    else self._ac_model_problem(
+                        ocpd.id,
+                        ocpd.model,
+                        ocpd.rating_a,
+                        rating_a=minimum,
+                        poles=ocpd.poles,
+                        fault_ka=fault,
+                        exact=False,
+                    ),
+                    ok_es=f"{ocpd.id}: {ocpd.model} cumple.",
+                    proposed=choice.device_id if choice else None,
+                    why_es=why,
+                    check=ocpd.model is not None,
+                )
+            self.record(
+                ocpd.id,
+                "rating_a",
+                ocpd.rating_a,
+                rule_id="MIC-011",
+                problem=problem,
+                ok_es=f"{ocpd.id}: {_g(ocpd.rating_a)} A entre {_n(minimum)} A (1.25 × suma) y "
+                f"{_g(ceiling)} A (troncal {branch.trunk_size}).",
+                proposed=choice.rating_a if choice else standard,
+                why_es=why,
+            )
+            self.record(
+                ocpd.id,
+                "kaic_ka",
+                ocpd.kaic_ka,
+                rule_id="OCP-006",
+                problem=self._kaic_problem(ocpd.id, ocpd.kaic_ka, fault),
+                ok_es=f"{ocpd.id}: {_g(ocpd.kaic_ka)} kA >= {_g(fault)} kA de falla.",
+                proposed=choice.interrupting_ka if choice else None,
+                why_es=why,
+            )
+
     def itm(self) -> None:
         spec = self.spec
+        if spec.ac_branches:
+            return  # the branch breakers are checked by branch_breakers()
         position = spec.ac_bos.point_of_connection.breaker
         ocpd = next((o for o in spec.ac_bos.ocpds if o.id == position), None)
         if ocpd is None or not spec.inverters:
@@ -847,6 +948,7 @@ class _Evaluator:
         strings = {s.string_id: s for s in self.derived.strings}
         values = {v.circuit_id: v for v in self.derived.circuits}
         inverters = {i.id: i for i in spec.inverters}
+        branches = {b.id: b for b in spec.ac_branches}
         for circuit in spec.circuits:
             cv = values[circuit.id]
             source = circuit.from_.split(".", maxsplit=1)[0]
@@ -859,6 +961,20 @@ class _Evaluator:
                     size, m, s.imp_a, s.vmp_stc_string_v, self.tables
                 )
                 limit, drop_rule, ocpd_a = limits.dc, "VD-001", None
+            elif source in branches:
+                branch = branches[source]
+                micro = inverters[branch.microinverters[0].inverter]
+                drop = lambda size, b=branch, i=micro, m=length: calc.voltage_drop_trunk_pct(  # noqa: E731
+                    size,
+                    b.trunk_size,
+                    home_run_m=m,
+                    spacing_m=b.spacing_m,
+                    units=len(b.microinverters),
+                    unit_current_a=i.iac_max_a,
+                    voltage_v=i.vac_v,
+                    tables=self.tables,
+                )
+                limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
             else:
                 inverter = inverters[source]
                 drop = lambda size, i=inverter, m=length: calc.voltage_drop_ac_pct(  # noqa: E731
@@ -1018,6 +1134,7 @@ def evaluate_choices(
     evaluator.box_switch()
     evaluator.spds()
     evaluator.itm()
+    evaluator.branch_breakers()
     evaluator.mains()
     evaluator.conductors()
     evaluator.raceways()

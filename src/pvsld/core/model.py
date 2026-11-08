@@ -1,4 +1,4 @@
-"""Pydantic v2 parameter model (schema_version 0.1.0) of a photovoltaic installation.
+"""Pydantic v2 parameter model (schema_version 0.1.0 / 0.2.0) of a photovoltaic installation.
 
 This is the single source of truth of the pipeline (ADR-0001, layer L2): inputs only. Anything
 computable (maximum string voltage, design currents, voltage drop, ...) is derived in
@@ -9,6 +9,11 @@ The model is strict on purpose: unknown fields are rejected, so a typo made by a
 error that names the field instead of a silently ignored input. Cross references (strings to
 modules and inverters, circuits to components, ...) are checked here, so the rule pack can rely
 on them.
+
+Schema 0.2.0 (Stage 3.9.3) adds microinverters: an inverter of type ``micro`` carries a ``micro``
+block with its installation limits, and ``ac_branches`` lists the AC branches, each with its units
+(``id``, model, module on each input), its trunk cable and its breaker. A 0.1.0 document is still
+valid; one that uses ``ac_branches`` must declare 0.2.0.
 
 Example::
 
@@ -26,6 +31,11 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "0.1.0"
+"""Version written into string-inverter designs (unchanged by schema 0.2.0)."""
+MICRO_SCHEMA_VERSION = "0.2.0"
+"""First version with microinverters (``ac_branches``); a design that uses them declares it."""
+SCHEMA_VERSIONS = (SCHEMA_VERSION, MICRO_SCHEMA_VERSION)
+NO_ARRAY_PROBLEM = "the design needs at least one string or one AC branch"
 RULEPACK_ID = "mx-gd-2026.10"
 NOM_EDITION = "NOM-001-SEDE-2012"
 
@@ -35,6 +45,8 @@ AWG_PATTERN = r"^(14|12|10|8|6|4|3|2|1|1/0|2/0|3/0|4/0) AWG$"
 NOMINAL_VOLTAGES_V = (127, 220, 240, 480, 13200, 13800, 23000, 34500)
 
 ConductorSize = Annotated[str, Field(pattern=AWG_PATTERN, examples=["10 AWG"])]
+# Any AWG size, for manufacturer data outside the ampacity tables (16 AWG drop cables).
+AnyAwgSize = Annotated[str, Field(pattern=r"^\d+ AWG$", examples=["16 AWG"])]
 PositiveFloat = Annotated[float, Field(gt=0)]
 PositiveInt = Annotated[int, Field(gt=0)]
 DeviceRole = Literal["I1", "I2", "other"]
@@ -183,6 +195,27 @@ class Mppt(_Strict):
     inputs: PositiveInt = 1
 
 
+class MicroData(_Strict):
+    """Installation limits of a microinverter model (schema 0.2.0)."""
+
+    ac_voltage_range_v: tuple[PositiveFloat, PositiveFloat] = Field(
+        description="AC voltage window; the voltage the unit is wired to must be inside it"
+    )
+    recommended_module_power_wp: tuple[PositiveFloat, PositiveFloat] = Field(
+        description="Recommended STC power of the module on each input (low, high)"
+    )
+    trunk_max_ocpd_a: dict[ConductorSize, PositiveFloat] = Field(
+        default_factory=dict,
+        description="Trunk cable sizes the manufacturer allows and the largest branch breaker",
+    )
+    max_units_per_trunk: dict[ConductorSize, PositiveInt] = Field(
+        default_factory=dict, description="Manufacturer cap of units per AC branch, by trunk size"
+    )
+    max_drop_cable_length_m: dict[AnyAwgSize, PositiveFloat] = Field(
+        default_factory=dict, description="Longest cable from the unit's AC sub connector, by size"
+    )
+
+
 class Inverter(_Strict):
     id: str = Field(min_length=1)
     manufacturer: str = Field(min_length=1)
@@ -204,6 +237,17 @@ class Inverter(_Strict):
     dc_switch_integrated: bool = False
     dc_spd_integrated: str | None = None
     certifications: list[str] = Field(default_factory=list)
+    micro: MicroData | None = Field(
+        default=None, description="Required for (and only for) type micro (schema 0.2.0)"
+    )
+
+    @model_validator(mode="after")
+    def _micro_data(self) -> Inverter:
+        if self.type == "micro" and self.micro is None:
+            raise ValueError(f"inverter {self.id}: a micro inverter needs its micro block")
+        if self.type != "micro" and self.micro is not None:
+            raise ValueError(f"inverter {self.id}: only a micro inverter has a micro block")
+        return self
 
 
 class StringSpec(_Strict):
@@ -214,6 +258,36 @@ class StringSpec(_Strict):
     mppt: str
     tilt_deg: float = Field(ge=0, le=90)
     azimuth_deg: float = Field(ge=0, le=360)
+
+
+class DropCable(_Strict):
+    """Cable from a microinverter's AC sub connector (instead of plugging it into the trunk)."""
+
+    size: AnyAwgSize
+    length_m: float = Field(gt=0, lt=1000)
+
+
+class BranchMicro(_Strict):
+    """One microinverter unit of an AC branch: its id, its model and the module on each input."""
+
+    id: str = Field(min_length=1)
+    inverter: str = Field(min_length=1, description="Id of the micro inverter model")
+    inputs: dict[str, str] = Field(
+        min_length=1, description="MPPT input id -> module id (one module per input)"
+    )
+    drop_cable: DropCable | None = None
+
+
+class AcBranch(_Strict):
+    """Microinverters on one AC trunk cable, protected by one breaker (schema 0.2.0)."""
+
+    id: str = Field(min_length=1)
+    trunk_size: ConductorSize
+    spacing_m: PositiveFloat = Field(description="Trunk length between two consecutive units")
+    microinverters: list[BranchMicro] = Field(
+        min_length=1, description="In order along the trunk, from the breaker end"
+    )
+    ocpd: str = Field(min_length=1, description="Id of the branch breaker in ac_bos.ocpds")
 
 
 class Combiner(_Strict):
@@ -443,13 +517,16 @@ def _duplicates(ids: Iterable[str]) -> list[str]:
 class PvSystemSpec(_Strict):
     """Root of the parameter model: one PV installation and the sheet that documents it."""
 
-    schema_version: Literal["0.1.0"]
+    schema_version: Literal["0.1.0", "0.2.0"]
     project: Project
     standards: Standards
     utility: Utility
     modules: list[Module] = Field(min_length=1)
     inverters: list[Inverter] = Field(min_length=1)
-    strings: list[StringSpec] = Field(min_length=1)
+    strings: list[StringSpec] = Field(
+        default_factory=list, description="At least one string unless the design uses ac_branches"
+    )
+    ac_branches: list[AcBranch] = Field(default_factory=list, description="Schema 0.2.0")
     dc_bos: DcBos
     ac_bos: AcBos
     circuits: list[Circuit] = Field(min_length=1)
@@ -467,6 +544,8 @@ class PvSystemSpec(_Strict):
         ids = [m.id for m in self.modules]
         ids += [i.id for i in self.inverters]
         ids += [s.id for s in self.strings]
+        ids += [b.id for b in self.ac_branches]
+        ids += [u.id for b in self.ac_branches for u in b.microinverters]
         ids += [c.id for c in self.dc_bos.combiners]
         ids += [d.id for d in self.dc_bos.disconnects]
         ids += [s.id for s in self.dc_bos.spds]
@@ -493,16 +572,25 @@ class PvSystemSpec(_Strict):
 
         modules = {m.id for m in self.modules}
         inverters = {i.id: i for i in self.inverters}
+        if not self.strings and not self.ac_branches:
+            problems.append(NO_ARRAY_PROBLEM)
         for string in self.strings:
             if string.module not in modules:
                 problems.append(f"string {string.id}: unknown module {string.module!r}")
             inverter = inverters.get(string.inverter)
             if inverter is None:
                 problems.append(f"string {string.id}: unknown inverter {string.inverter!r}")
+            elif inverter.type == "micro":
+                problems.append(
+                    f"string {string.id}: inverter {inverter.id} is a microinverter; its modules "
+                    "go in ac_branches[].microinverters[].inputs"
+                )
             elif string.mppt not in {m.id for m in inverter.mppt}:
                 problems.append(
                     f"string {string.id}: inverter {inverter.id} has no MPPT {string.mppt!r}"
                 )
+
+        problems += self._branch_problems(modules, inverters)
 
         for circuit in self.circuits:
             for endpoint in (circuit.from_, circuit.to):
@@ -542,6 +630,48 @@ class PvSystemSpec(_Strict):
         if problems:
             raise ValueError("; ".join(problems))
         return self
+
+    def _branch_problems(self, modules: set[str], inverters: Mapping[str, Inverter]) -> list[str]:
+        """Cross references of ``ac_branches`` (schema 0.2.0)."""
+        if not self.ac_branches:
+            return []
+        problems: list[str] = []
+        if self.schema_version != MICRO_SCHEMA_VERSION:
+            problems.append(
+                f"ac_branches needs schema_version {MICRO_SCHEMA_VERSION!r} "
+                f"(got {self.schema_version!r})"
+            )
+        ocpds = {o.id for o in self.ac_bos.ocpds}
+        units: Counter[str] = Counter()
+        for branch in self.ac_branches:
+            if branch.ocpd not in ocpds:
+                problems.append(f"ac_branch {branch.id}: unknown ocpd {branch.ocpd!r}")
+            for unit in branch.microinverters:
+                inverter = inverters.get(unit.inverter)
+                if inverter is None:
+                    problems.append(f"microinverter {unit.id}: unknown inverter {unit.inverter!r}")
+                    continue
+                if inverter.type != "micro":
+                    problems.append(
+                        f"microinverter {unit.id}: inverter {inverter.id} is not of type micro"
+                    )
+                    continue
+                units[inverter.id] += 1
+                mppts = {m.id for m in inverter.mppt}
+                for input_id, module_id in unit.inputs.items():
+                    if input_id not in mppts:
+                        problems.append(
+                            f"microinverter {unit.id}: {inverter.id} has no input {input_id!r}"
+                        )
+                    if module_id not in modules:
+                        problems.append(f"microinverter {unit.id}: unknown module {module_id!r}")
+        for inverter in inverters.values():
+            if inverter.type == "micro" and units[inverter.id] != inverter.qty:
+                problems.append(
+                    f"inverter {inverter.id}: qty {inverter.qty} but {units[inverter.id]} "
+                    "unit(s) in ac_branches"
+                )
+        return problems
 
 
 def parse_spec(data: Mapping[str, Any]) -> PvSystemSpec:
