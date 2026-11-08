@@ -976,6 +976,8 @@ class _DcDevices:
     """Each SPD feed: the device port it leaves, the SPD port it reaches, the x of its rise."""
     junctions: tuple[SymbolSample, ...] = ()
     outline: tuple[PolylineItem, TextItem] | None = None
+    string_spds: tuple[tuple[str, PortRef, str, float], ...] = ()
+    """Per-string box: each SPD id, the device port its tap leaves, its port, the rise x."""
 
 
 STRING_DEVICE_SYMBOLS = {"DCB-": "PVSLD_CB_DC", "FUS-": "PVSLD_FUSE_DISC_DC"}
@@ -992,6 +994,9 @@ SPD_BOX_DROP_MM = 4.0
 """The SPD module's inputs sit this far below the lower string conductor."""
 SWITCH_GAP_MM = 3.0
 """Gap between the lower tap to the SPD and the box disconnect."""
+STRING_SPD_STEP_MM = 3.0
+"""Per-string box: each string's SPD hangs this much right of the previous one, so the upper
+SPD's earth lead passes clear of the lower SPD."""
 
 
 def _string_devices(spec: PvSystemSpec) -> list[DcDisconnect]:
@@ -1084,7 +1089,79 @@ def _protection_box(
     taps: list[tuple[PortRef, str, float]] = []
     junctions: list[SymbolSample] = []
     x_after = device_out
-    if dc.spds:
+    per_string = any(d.id.startswith("DCD-S") for d in dc.disconnects)
+    string_spds: list[tuple[str, PortRef, str, float]] = []
+    if per_string:
+        # Each string has its own SPD and two-pole switch; only the earth is shared (2026-11-04).
+        spds = {spd.id.removeprefix("DPS-"): spd for spd in dc.spds if spd.id.startswith("DPS-S")}
+        switches = {
+            d.id.removeprefix("DCD-"): d for d in dc.disconnects if d.id.startswith("DCD-S")
+        }
+        for index, string in enumerate(order):
+            spd = spds.get(string.id)
+            if spd is None:
+                continue
+            volts = spd.ucpv_v if spd.ucpv_v is not None else spd.uc_v
+            item = _instance(
+                "PVSLD_SPD_DC_BOX",
+                spd.id,
+                device_out + SPD_TAP_MM + index * STRING_SPD_STEP_MM,
+                row[string.id],
+                {
+                    "TAG": spd.id,
+                    "DESC": "",
+                    "SPEC": "",
+                    "SPD_TYPE": spd.spd_type,
+                    "UC_V": _g(volts) if volts else NO_VALUE,
+                    "UP_KV": NO_VALUE,
+                    "IN_KA": _g(spd.in_ka),
+                },
+                scale=k,
+            )
+            instances.append(item)
+            rise = item.port_xy("L1").x
+            string_spds.append((spd.id, PortRef(by_string[string.id].id, "OUT"), "L1", rise))
+            junctions.append(
+                SymbolSample(
+                    "PVSLD_JUNCTION",
+                    rnd(rise),
+                    rnd(row[string.id]),
+                    JUNCTION_SCALE,
+                    get_symbol("PVSLD_JUNCTION").layer,
+                    "model",
+                )
+            )
+            x_after = max(x_after, rise)
+        for string in order:
+            switch_part = switches.get(string.id)
+            if switch_part is None:
+                continue
+            instances.append(
+                _instance(
+                    dc_disconnect_name(1),
+                    switch_part.id,
+                    x_after + SWITCH_GAP_MM,
+                    row[string.id],
+                    {
+                        "TAG": switch_part.id,
+                        "DESC": "",
+                        "N_STRINGS": "1",
+                        "ROLE": "DCD",
+                        "POLES": str(switch_part.poles),
+                        "RATING_A": _g(switch_part.ie_a),
+                        "VOLT_V": _g(switch_part.ue_v),
+                        "LOAD_BREAK": "SI",
+                    },
+                )
+            )
+            stops[string.id].append(_Stop(switch_part.id, "IN1", "OUT1"))
+        x_after = max(
+            (i.port_xy("OUT1").x for i in instances if i.comp_id.startswith("DCD-S")),
+            default=x_after,
+        )
+        # The box's own switches replace the inverter's integrated one in the drawing.
+        switch = next(iter(switches.values()), None)
+    elif dc.spds:
         spd = dc.spds[0]
         lower_y = min(row.values())
         x_spd = device_out + SPD_TAP_MM
@@ -1119,7 +1196,7 @@ def _protection_box(
                 )
             )
         x_after = max(spd_instance.port_xy(port).x for _tap, port, _x in taps)
-    if switch is not None:
+    if switch is not None and not per_string:
         name = dc_disconnect_name(len(strings))
         top = row[order[0].id]
         instances.append(
@@ -1194,7 +1271,13 @@ def _protection_box(
     caption = TextItem(layers.ENCLOSURES, x0, rnd(y1 + 1.5), DC_BOX_CAPTION_MM, text)
     chains = {s.id: _DcChain(tuple(stops[s.id]), circuit_run=1) for s in strings}
     return _DcDevices(
-        tuple(instances), chains, spd_instance, tuple(taps), tuple(junctions), (outline, caption)
+        tuple(instances),
+        chains,
+        spd_instance,
+        tuple(taps),
+        tuple(junctions),
+        (outline, caption),
+        tuple(string_spds),
     )
 
 
@@ -1582,6 +1665,23 @@ def _finish_schematic(
         PortRef(GROUND_COMP_ID, "PE"),
         route="vh",
     )
+    for spd_id, tap, port, rise_x in dc.string_spds:
+        connect(
+            f"DC-{spd_id}",
+            "pv_source",
+            layers.DC_CONDUCTORS,
+            tap,
+            PortRef(spd_id, port),
+            bend_x=rise_x,
+        )
+        connect(
+            f"GND-{spd_id}",
+            "grounding",
+            layers.GROUNDING,
+            PortRef(spd_id, "PE"),
+            PortRef(GROUND_COMP_ID, "PE"),
+            route="vh",
+        )
     if spd_instance is not None:
         for index, (tap, port, rise_x) in enumerate(dc.spd_taps):
             connect(

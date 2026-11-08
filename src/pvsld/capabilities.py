@@ -91,8 +91,9 @@ CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "drawing.dc_box_per_string",
         "Plano de la caja por cadena",
-        "pending",
-        "La plantilla del plano (plugin) dibuja solo la caja compartida.",
+        "supported",
+        "La plantilla A3 dibuja la caja por cadena: fusible, DPS y seccionador de 2 polos por "
+        "cadena.",
     ),
     Capability(
         "microinverters",

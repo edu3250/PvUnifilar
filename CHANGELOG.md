@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The A3 sheet draws the per-string DC box: each string's gPV fuse (or DC breaker), its own SPD with its earth lead and its own two-pole switch `DCD-<string>`; the box's switches replace the inverter's integrated disconnect in the drawing. Capability `drawing.dc_box_per_string` is now supported.
+
 - The A3 sheet (`a3_plantilla_v1`) draws microinverter designs: each AC branch on its own row with a module on each used input, the units tapping the trunk, the junction box and the home run to the branch breaker; the branch breakers feed the load centre, or sit in the dashed AC combiner with its SPD and the main breaker ITM-1 at the load centre. The memory, the circuit boxes (1: branches, 2: combiner output or the breakers at the load centre), the inverter box and the project line describe the micro design. Up to 8 microinverters in 3 branches; a larger design is calculated but its drawing is refused with a clear message. Generated symbols: the microinverter's DC inputs are optional ports (a free input is not dangling). Capability `drawing.microinverters` is now supported.
 
 - Microinverters in the catalogue: Hoymiles HMS-800/900/1000-2T, Enphase IQ8HC-72-M-US (the Mexico datasheet; the installation manual states that only the IQ8HC works on the 220 V grid in Mexico, so the IQ8MC and IQ8AC are not loaded), APsystems DS3-H and DS3-LV (120 V, for the 1F-2H 127 V service). Owner criteria for datasheets: a missing real power equals the apparent power when the default power factor is at least 0.99; a missing largest branch breaker is left out and the NOM 240-4(d) limit applies; caps that change with the AC voltage keep the 220 V column.
