@@ -889,7 +889,7 @@ monitoring gateway; one symbol per micro; no mixed micro + string systems; no fi
 **Goal**: `microinverter` record type (`pvsld.catalogue.microinverters`), separate from string
 inverters, with the manufacturer's trunk-cable and drop-cable tables; Growatt NEO M-X2 record.
 **Tests**: tests/test_catalogue_micro.py.
-**Status**: In Progress
+**Status**: Complete (PR #69)
 
 ##### Stage 3.9.2: microinverter rules (module inputs, service voltage, AC branch)
 **Goal**: pure rule functions in `pvsld.sizing.micro`: MIC-001..005 module on each input (Voc cold,
@@ -897,10 +897,20 @@ Isc without 1.25, Imp clipping info, recommended power info/warning, hot Vmp), M
 voltage inside the AC window, MIC-011..013 AC branch (1.25 x sum <= breaker <= 240-4(d), then
 the manufacturer cap and trunk sizes), VD-002 daisy-chain trunk drop, MIC-014 drop-cable length.
 **Tests**: tests/test_micro_rules.py (the owner's NOM / Growatt tables of 2026-11-07).
-**Status**: In Progress
+**Status**: Complete (PR #70)
 
 ##### Stage 3.9.3: spec AC branches, validation, evaluate_draft / evaluate_choices
-**Status**: Not Started
+**Goal**: schema 0.2.0: an inverter of type `micro` with its `micro` block (AC window, recommended
+module power, manufacturer trunk / drop-cable tables) and `ac_branches` (units with the module on
+each input, trunk size and spacing, branch breaker); 0.1.0 documents stay valid. The rules move to
+`pvsld.core.micro` (plain data) and run in the rule pack; `calc.derive` adds the micro array power
+and the branch circuit current and daisy-chain drop; the draft accepts micros (one model, no
+mixing with string inverters); `evaluate_choices` checks each branch breaker (MIC-011) and the
+branch conductor; the drawing refuses micro designs with a clear message (plugin stage later).
+AC combiner box left pending in the capability matrix (owner: both layouts valid, default ITM per
+branch in the load centre).
+**Tests**: tests/test_micro_spec.py.
+**Status**: In Progress
 
 ##### Stage 3.9.4: pvsld.graph micro nodes, palette, capabilities; editor notified
 **Status**: Not Started

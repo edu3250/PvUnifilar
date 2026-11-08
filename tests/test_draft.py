@@ -50,7 +50,10 @@ def test_missing_ac_section_still_runs_the_string_rules(spec: dict[str, Any]) ->
 
 def test_empty_required_list_is_missing(spec: dict[str, Any]) -> None:
     spec["strings"] = []
-    assert _only(evaluate_draft(spec))["category"] == "missing"
+    issues = evaluate_draft(spec).issues
+    assert (issues[0].category, issues[0].path) == ("missing", "strings")
+    # The circuits of the removed strings are reported too (schema 0.2.0 checks references).
+    assert {i.component_ids for i in issues[1:]} == {("C-S1",), ("C-S2",)}
 
 
 def test_missing_field_names_its_component(spec: dict[str, Any]) -> None:
@@ -125,7 +128,6 @@ def test_not_a_mapping_is_invalid_structure() -> None:
     ("change", "path"),
     [
         (lambda s: s["inverters"].append({**s["inverters"][0], "id": "INV2"}), "inverters"),
-        (lambda s: s["inverters"][0].update(type="micro"), "inverters[0].type"),
         (lambda s: s["inverters"][0].update(qty=2), "inverters[0].qty"),
         (lambda s: s["storage"].update(coupling="dc"), "storage.coupling"),
     ],

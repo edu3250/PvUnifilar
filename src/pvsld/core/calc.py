@@ -299,6 +299,31 @@ def voltage_drop_ac_pct(
     return 100 * (factor * length_m * current_a * resistance) / voltage_v
 
 
+def voltage_drop_trunk_pct(
+    size: str,
+    trunk_size: str,
+    *,
+    home_run_m: float,
+    spacing_m: float,
+    units: int,
+    unit_current_a: float,
+    voltage_v: float,
+    tables: NomTables,
+) -> float:
+    """Voltage drop (%) from a microinverter branch breaker to the last unit of its trunk.
+
+    The home run (``size``) carries every unit's current; the trunk segment after unit ``k``
+    (``trunk_size``, ``spacing_m`` long) carries the current of the ``units - k`` units beyond it.
+    Two energized conductors.
+    """
+    drop = voltage_drop_ac_pct(size, home_run_m, units * unit_current_a, voltage_v, 2, tables)
+    for beyond in range(units - 1, 0, -1):
+        drop += voltage_drop_ac_pct(
+            trunk_size, spacing_m, beyond * unit_current_a, voltage_v, 2, tables
+        )
+    return drop
+
+
 # --- Derived values of a whole system --------------------------------------------------------
 
 
@@ -416,12 +441,14 @@ def _circuit_values(
     by_circuit = {c.id: c for c in spec.circuits}
     string_values = {s.string_id: s for s in strings}
     inverters = {i.id: i for i in spec.inverters}
+    branches = {b.id: b for b in spec.ac_branches}
     site = spec.project.site
     values = []
     for circuit in spec.circuits:
         size = circuit.conductors.size
         source = string_values.get(_base_id(circuit.from_))
         inverter = inverters.get(_base_id(circuit.from_))
+        branch = branches.get(_base_id(circuit.from_))
 
         i_max: float | None = None
         vd_pct: float | None = None
@@ -434,6 +461,21 @@ def _circuit_values(
             i_max = inverter.iac_max_a
             vd_pct = voltage_drop_ac_pct(
                 size, circuit.length_m, i_max, inverter.vac_v, inverter.phases, tables
+            )
+        elif circuit.kind == "inverter_output" and branch is not None:
+            # A microinverter branch: the home run from the breaker plus the daisy-chained trunk.
+            micro = inverters[branch.microinverters[0].inverter]
+            units = len(branch.microinverters)
+            i_max = units * micro.iac_max_a
+            vd_pct = voltage_drop_trunk_pct(
+                size,
+                branch.trunk_size,
+                home_run_m=circuit.length_m,
+                spacing_m=branch.spacing_m,
+                units=units,
+                unit_current_a=micro.iac_max_a,
+                voltage_v=micro.vac_v,
+                tables=tables,
             )
 
         raceway = circuit.raceway
@@ -486,7 +528,7 @@ def derive_strings(spec: PvSystemSpec) -> Derived:
     ``circuits`` stays empty, so only rules that read the strings may run on the result.
     """
     strings = _string_values(spec)
-    kwp = sum(s.p_stc_w for s in strings) / 1000
+    kwp = (sum(s.p_stc_w for s in strings) + micro_array_w(spec)) / 1000
     kwac = sum(i.pac_w * i.qty for i in spec.inverters) / 1000
     return Derived(
         kwp_total=kwp,
@@ -502,7 +544,7 @@ def derive(spec: PvSystemSpec) -> Derived:
     """Compute every derived value of ``spec`` (see the vault note PV SLD Parameter Model)."""
     tables = get_tables(spec.standards.nom_edition)
     strings = _string_values(spec)
-    kwp = sum(s.p_stc_w for s in strings) / 1000
+    kwp = (sum(s.p_stc_w for s in strings) + micro_array_w(spec)) / 1000
     kwac = sum(i.pac_w * i.qty for i in spec.inverters) / 1000
     return Derived(
         kwp_total=kwp,
@@ -511,4 +553,15 @@ def derive(spec: PvSystemSpec) -> Derived:
         t_cell_max_c=t_cell_max_c(spec.project.site.t_amb_max_c),
         strings=strings,
         circuits=_circuit_values(spec, strings, tables),
+    )
+
+
+def micro_array_w(spec: PvSystemSpec) -> float:
+    """STC power of the modules on the microinverter inputs of ``ac_branches``."""
+    pmax = {m.id: m.pmax_w for m in spec.modules}
+    return sum(
+        pmax[module_id]
+        for branch in spec.ac_branches
+        for unit in branch.microinverters
+        for module_id in unit.inputs.values()
     )

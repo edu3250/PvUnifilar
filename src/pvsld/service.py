@@ -24,7 +24,7 @@ from pvsld.backends.dxf import write_dxf
 from pvsld.backends.readback import ReadBackReport, verify
 from pvsld.core.calc import Derived
 from pvsld.core.diagram import Diagram
-from pvsld.core.layout import build_diagram
+from pvsld.core.layout import LayoutError, build_diagram
 from pvsld.core.layout_sheet import TEMPLATE as SHEET_LAYOUT
 from pvsld.core.layout_sheet import build_sheet_diagram
 from pvsld.core.model import PvSystemSpec
@@ -49,6 +49,11 @@ def layout_diagram(spec: PvSystemSpec, derived: Derived) -> Diagram:
         LayoutError: the spec is outside the template.
         SheetTemplateError: the sheet template file is missing or does not match.
     """
+    if spec.ac_branches:
+        raise LayoutError(
+            "El plano con microinversores todavía no está disponible (capacidad "
+            "«drawing.microinverters» pendiente); el diseño sí se valida y se revisa."
+        )
     if spec.layout.template == SHEET_LAYOUT:
         from pvsld.sheets import load_sheet_template
 
