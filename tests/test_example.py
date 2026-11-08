@@ -21,7 +21,6 @@ EXPECTED_REQUIRED_SECTIONS = (
     "utility",
     "modules",
     "inverters",
-    "strings",
     "dc_bos",
     "ac_bos",
     "circuits",

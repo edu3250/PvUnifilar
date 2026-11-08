@@ -9,6 +9,10 @@ and every mapping that is not a plain copy is written down here:
   ``voc_v``, ``vmp_v``, ``imp_a`` and ``pmax_w`` stay at STC, as the string voltage sizing needs.
 * **Inverter PV power limit.** ``Inverter.pdc_max_w`` is the datasheet "recommended maximum PV
   power", or the optimizer-only value when the design declares optimizers on every module.
+* **Microinverters** (schema 0.2.0). Each DC input is one MPPT (``A``, ``B``...) holding one
+  module; ``pdc_max_w`` is the top of the recommended module power times the inputs;
+  ``ocpd_max_a`` the largest branch breaker the manufacturer allows on any trunk cable; the
+  ``micro`` block carries the AC window and the manufacturer's trunk and drop-cable tables.
 * **Values the catalogue does not carry** are listed in :data:`ASSUMPTIONS` and copied to the
   result: the full-power MPPT window, the inverter's maximum OCPD and the DC protection flags.
 """
@@ -18,8 +22,9 @@ from __future__ import annotations
 from typing import Final
 
 from pvsld.catalogue import Inverter as CatalogueInverter
+from pvsld.catalogue import Microinverter
 from pvsld.catalogue import PVModule as CatalogueModule
-from pvsld.core.model import Inverter, Module, Mppt
+from pvsld.core.model import Inverter, MicroData, Module, Mppt
 
 MODULE_ID: Final = "MOD1"
 INVERTER_ID: Final = "INV1"
@@ -40,7 +45,7 @@ class UnsupportedComponentError(ValueError):
     """A catalogue component cannot be expressed in schema 0.1.0 (message says why)."""
 
 
-def display_model(component: CatalogueModule | CatalogueInverter) -> str:
+def display_model(component: CatalogueModule | CatalogueInverter | Microinverter) -> str:
     """Catalogue id without the manufacturer prefix (``JINKO-JKM650N-X`` -> ``JKM650N-X``).
 
     The sheet's tables are width-limited (``LayoutError`` otherwise), and the manufacturer is
@@ -85,7 +90,7 @@ def to_spec_module(module: CatalogueModule) -> Module:
     )
 
 
-def mppt_ids(inverter: CatalogueInverter) -> list[str]:
+def mppt_ids(inverter: CatalogueInverter | Microinverter) -> list[str]:
     """MPPT identifiers ``A``, ``B``, ... in catalogue order."""
     if inverter.mppt_count > len(MPPT_LETTERS):
         raise UnsupportedComponentError(
@@ -144,4 +149,52 @@ def to_spec_inverter(
         dc_switch_integrated=bool(protection and protection.dc_switch),
         dc_spd_integrated=protection.dc_spd if protection else None,
         certifications=[],
+    )
+
+
+def to_spec_microinverter(
+    micro: Microinverter, *, inverter_id: str, qty: int, ac_voltage_v: float, phases: int
+) -> Inverter:
+    """The parameter-model inverter (type ``micro``) of ``qty`` units of a catalogue model."""
+    low_v, high_v = micro.mppt_voltage_range_v
+    protection = micro.protection
+    mppt = [
+        Mppt(
+            id=letter,
+            vmin_v=low_v,
+            vmax_v=high_v,
+            vmin_full_power_v=low_v,
+            vmax_full_power_v=high_v,
+            imax_a=micro.max_input_current_per_mppt_a,
+            isc_max_a=micro.max_short_circuit_current_per_mppt_a,
+            inputs=1,
+        )
+        for letter in mppt_ids(micro)
+    ]
+    return Inverter(
+        id=inverter_id,
+        manufacturer=micro.manufacturer,
+        model=display_model(micro),
+        type="micro",
+        qty=qty,
+        pac_w=micro.rated_ac_power_w,
+        vac_v=ac_voltage_v,
+        phases=phases,  # type: ignore[arg-type]  # validated by the model; narrowed to 1 | 2 | 3
+        iac_max_a=micro.max_ac_output_current_a,
+        ocpd_max_a=max(cable.max_ocpd_a for cable in micro.trunk_cables),
+        vdc_max_v=micro.max_input_voltage_v,
+        vdc_start_v=micro.startup_voltage_v,
+        pdc_max_w=micro.recommended_module_power_wp[1] * micro.mppt_count,
+        mppt=mppt,
+        isolation=micro.topology or "no declarado",
+        gfp=bool(protection and protection.insulation_monitoring),
+        afci=bool(protection and (protection.afci or protection.arc_fault)),
+        certifications=[],
+        micro=MicroData(
+            ac_voltage_range_v=micro.ac_voltage_range_v,
+            recommended_module_power_wp=micro.recommended_module_power_wp,
+            trunk_max_ocpd_a={cable.size: cable.max_ocpd_a for cable in micro.trunk_cables},
+            max_units_per_trunk=dict(micro.max_units_per_trunk),
+            max_drop_cable_length_m=dict(micro.max_drop_cable_length_m),
+        ),
     )

@@ -25,6 +25,7 @@ from pydantic import Field, TypeAdapter, ValidationError
 from pvsld.catalogue.conductors import Cable, CableFamily
 from pvsld.catalogue.errors import CatalogueError, UnknownComponentError
 from pvsld.catalogue.inverters import Inverter, InverterFamily
+from pvsld.catalogue.microinverters import Microinverter, MicroinverterFamily
 from pvsld.catalogue.modules import PVModule, PVModuleFamily
 from pvsld.catalogue.protection import (
     AcBreaker,
@@ -42,6 +43,7 @@ from pvsld.catalogue.protection import (
 Family = (
     PVModuleFamily
     | InverterFamily
+    | MicroinverterFamily
     | ProtectionFamily
     | DcFuseFamily
     | CableFamily
@@ -49,13 +51,16 @@ Family = (
     | DcSwitchFamily
     | DcSpdFamily
 )
-Component = PVModule | Inverter | DcBreaker | DcFuse | Cable | AcBreaker | DcSwitch | DcSpd
+Component = (
+    PVModule | Inverter | Microinverter | DcBreaker | DcFuse | Cable | AcBreaker | DcSwitch | DcSpd
+)
 
 # ``datasheets/records/<folder>/<family-id lowercase>.yaml``
 RECORD_FOLDERS: dict[str, str] = {
     "pv_module": "modules",
     "string_inverter": "inverters",
     "hybrid_inverter": "inverters",
+    "microinverter": "inverters",
     "dc_breaker": "protection",
     "dc_fuse": "protection",
     "ac_breaker": "protection",
@@ -275,6 +280,10 @@ class ComponentRegistry:
     def inverters(self) -> list[Inverter]:
         """Every inverter (string and hybrid), sorted by id."""
         return [c for c in self if isinstance(c, Inverter)]
+
+    def microinverters(self) -> list[Microinverter]:
+        """Every microinverter, sorted by id."""
+        return [c for c in self if isinstance(c, Microinverter)]
 
     def dc_breakers(self) -> list[DcBreaker]:
         """Every DC breaker, sorted by id."""

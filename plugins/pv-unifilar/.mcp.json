@@ -5,7 +5,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "pvsld==0.7.3",
+        "pvsld==0.8.0",
         "pvsld-mcp"
       ],
       "env": {

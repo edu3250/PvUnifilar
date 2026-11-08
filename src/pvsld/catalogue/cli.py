@@ -34,6 +34,7 @@ from pvsld.catalogue.local import (
     load_catalogue,
     local_catalogue_dir,
 )
+from pvsld.catalogue.microinverters import Microinverter
 from pvsld.catalogue.modules import PVModule
 from pvsld.catalogue.protection import AcBreaker, DcBreaker, DcFuse, DcSpd, DcSwitch
 from pvsld.catalogue.registry import RECORD_FOLDERS, Component, ComponentRegistry, load_records
@@ -51,6 +52,8 @@ def _rating(component: Component) -> str:
             f"{component.rated_ac_power_w / 1000:g} kW AC, "
             f"{component.recommended_max_pv_power_wp / 1000:g} kWp DC max"
         )
+    if isinstance(component, Microinverter):
+        return f"{component.rated_ac_power_w:g} W AC, {component.mppt_count} entradas"
     if isinstance(component, AcBreaker):
         return f"{component.rated_current_a:g} A {component.interrupting_ka:g} kA"
     if isinstance(component, DcSwitch):

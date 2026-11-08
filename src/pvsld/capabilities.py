@@ -15,7 +15,8 @@ FORMAT = "pvsld.capabilities/1"
 
 MAX_INVERTERS = 1
 MAX_STRINGS = 2
-SUPPORTED_INVERTER_TYPES = frozenset({"string", "hybrid"})
+SUPPORTED_INVERTER_TYPES = frozenset({"string", "hybrid", "micro"})
+MAX_MICRO_MODELS = 1
 INVERTER_DC_PORTS = ("A", "B")
 SUPPORTED_SYSTEMS = ("1F-2H", "2F-3H")
 
@@ -46,7 +47,7 @@ CAPABILITIES: tuple[Capability, ...] = (
         "inverters.type",
         "Tipo de inversor",
         "supported",
-        "Inversores de cadena e híbridos; microinversores, centrales y con optimizadores "
+        "Inversores de cadena, híbridos y microinversores; centrales y con optimizadores "
         "por cadena están pendientes.",
     ),
     Capability(
@@ -81,10 +82,44 @@ CAPABILITIES: tuple[Capability, ...] = (
         "tierra): caja, dibujo del editor y revisiones.",
     ),
     Capability(
+        "dc_box.combined",
+        "Caja 2 entradas → 1 salida",
+        "pending",
+        "Dos cadenas unidas en paralelo después de sus fusibles hacia una sola entrada MPPT "
+        "(ENG-016): requiere inversores con entradas de más corriente (comerciales, trifásicos).",
+    ),
+    Capability(
         "drawing.dc_box_per_string",
         "Plano de la caja por cadena",
         "pending",
         "La plantilla del plano (plugin) dibuja solo la caja compartida.",
+    ),
+    Capability(
+        "microinverters",
+        "Microinversores",
+        "supported",
+        f"Ramas de CA de microinversores ({MAX_MICRO_MODELS} modelo por diseño, sin límite de "
+        "ramas), un ITM por rama en el centro de carga; revisiones MIC-001 a MIC-014 y caída de "
+        "tensión del troncal.",
+    ),
+    Capability(
+        "microinverters.ac_combiner",
+        "Caja combinadora de CA",
+        "supported",
+        "ITM por rama, DPS de CA e ITM general en una caja antes del centro de carga "
+        "(MIC-020, MIC-021); sin caja, un ITM por rama en el centro de carga.",
+    ),
+    Capability(
+        "microinverters.mixed",
+        "Microinversores con inversor de cadena",
+        "pending",
+        "Un mismo diseño con microinversores y un inversor de cadena.",
+    ),
+    Capability(
+        "drawing.microinverters",
+        "Plano con microinversores",
+        "pending",
+        "La plantilla del plano (plugin) dibuja solo inversores de cadena.",
     ),
     Capability(
         "utility.system",
@@ -125,6 +160,7 @@ def capabilities() -> dict[str, Any]:
         "format": FORMAT,
         "limits": {
             "max_inverters": MAX_INVERTERS,
+            "max_micro_models": MAX_MICRO_MODELS,
             "max_strings": MAX_STRINGS,
             "inverter_types": sorted(SUPPORTED_INVERTER_TYPES),
             "inverter_dc_ports": list(INVERTER_DC_PORTS),
@@ -139,6 +175,7 @@ __all__ = [
     "FORMAT",
     "INVERTER_DC_PORTS",
     "MAX_INVERTERS",
+    "MAX_MICRO_MODELS",
     "MAX_STRINGS",
     "SUPPORTED_INVERTER_TYPES",
     "SUPPORTED_SYSTEMS",

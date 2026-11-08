@@ -1,0 +1,64 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per model.
+# Microinverter: 4 inputs, one PV module per input; units join on an AC trunk cable (AC branch).
+component_type: microinverter
+family_id: GROWATT-NEO-M-X2
+manufacturer: Growatt
+model_family: NEO 1600~2500M-X2
+mppt_count: 4
+inputs_per_mppt: 1                          # "No. de cadenas FV por MPPT 1/1"
+max_input_voltage_v: 60
+startup_voltage_v: 20
+operating_input_voltage_range_v: [16, 60]   # "Voltaje nominal 16-60V"
+mppt_voltage_range_v: [16, 55]
+max_input_current_per_mppt_a: 18
+max_short_circuit_current_per_mppt_a: 20
+mppt_efficiency_pct: 99.5
+grid: single_phase                          # "Tipo de conexión a la red de CA: Monofásico"
+rated_ac_voltage_v: [220, 230, 240]
+ac_voltage_range_v: [180, 275]
+max_ac_current_reference_voltage_v: 220     # "7.27A@220V"
+frequency_hz: [50, 60]
+power_factor_range: [-0.8, 0.8]             # "0,8 de adelanto...0,8 de atraso"
+thd_max_pct: 3
+protection: {dc_reverse_polarity: true, insulation_monitoring: true, ac_spd: "Type III", grid_monitoring: true, ac_short_circuit: true}
+topology: Transformador (as printed)
+night_power_w: 0.05
+dc_connector: VP-D4 / PV-JK00M2
+ac_connection: Conectar y usar
+communication: WiFi, RF
+operating_temp_c: [-40, 65]
+altitude_m: 4000
+ip_rating: IP67 (NEMA 6)
+weight_kg: 5.1
+dimensions_mm: [396, 270, 45]
+trunk_cables:                               # installation manual 4.4 (owner screenshot)
+  - {size: 12 AWG, max_ocpd_a: 25}
+  - {size: 10 AWG, max_ocpd_a: 32}
+drop_cable_size: 14 AWG                     # "it is recommended to use the 14 AWG AC cable"
+variants:
+  - {component_id: GROWATT-NEO-1600M-X2, recommended_module_power_wp: [320, 530], rated_ac_power_w: 1600, max_apparent_power_va: 1600, max_ac_output_current_a: 7.27, max_efficiency_pct: 96.5, max_units_per_trunk: {12 AWG: 3, 10 AWG: 4}, max_drop_cable_length_m: {14 AWG: 35, 16 AWG: 20}}
+  - {component_id: GROWATT-NEO-1800M-X2, recommended_module_power_wp: [360, 600], rated_ac_power_w: 1800, max_apparent_power_va: 1800, max_ac_output_current_a: 8.18, max_efficiency_pct: 96.5, max_units_per_trunk: {12 AWG: 3, 10 AWG: 3}, max_drop_cable_length_m: {14 AWG: 30, 16 AWG: 15}}
+  - {component_id: GROWATT-NEO-2000M-X2, recommended_module_power_wp: [400, 670], rated_ac_power_w: 2000, max_apparent_power_va: 2000, max_ac_output_current_a: 9.09, max_efficiency_pct: 96.5, max_units_per_trunk: {12 AWG: 2, 10 AWG: 3}, max_drop_cable_length_m: {14 AWG: 25, 16 AWG: 15}}
+  - {component_id: GROWATT-NEO-2250M-X2, recommended_module_power_wp: [450, 700], rated_ac_power_w: 2250, max_apparent_power_va: 2250, max_ac_output_current_a: 10.23, max_efficiency_pct: 96.5, max_units_per_trunk: {12 AWG: 2, 10 AWG: 2}, max_drop_cable_length_m: {14 AWG: 20, 16 AWG: 10}}
+  - {component_id: GROWATT-NEO-2500M-X2, recommended_module_power_wp: [500, 700], rated_ac_power_w: 2500, max_apparent_power_va: 2500, max_ac_output_current_a: 11.36, max_efficiency_pct: 96.5, max_units_per_trunk: {12 AWG: 2, 10 AWG: 2}, max_drop_cable_length_m: {14 AWG: 20, 16 AWG: 10}}
+source:
+  filename: ficha-tecnica-neo2500mx2.pdf
+  sha256: 95fa003e6743ed8f06347943f7f02d580d488249d7152f5ea741d0047fb55c0b
+  title: Growatt NEO 1600~2500M-X2, hoja de datos (Spanish)
+  pages: [1, 2]
+  extraction_method: pdf_text_layer
+  extraction_date: 2026-11-07
+  reviewed_by: edu3250
+  review_date: 2026-11-07
+  notes: >-
+    The owner provided the PDF on 2026-11-07 to start microinverter support. Values from the PDF text layer,
+    checked against the rendered page 2. The datasheet prints 2550 W rated AC power for the NEO 2250M-X2 but
+    2250 VA apparent power and 10.23 A at 220 V (= 2250 VA); real power cannot exceed apparent power, so the
+    record keeps 2250 W (owner decision 2026-11-07). The recommended module power is printed with a trailing
+    "+" ("320W to 530W+"); the record keeps the printed numbers. The AC current is also printed at 230 V and
+    240 V (6.96 / 6.67 A for the 1600). trunk_cables, max_units_per_trunk, drop_cable_size and
+    max_drop_cable_length_m come from section 4.4 of the installation manual ("Selection of the Over Current
+    Protection Device and the Cable"), shared by the owner as a screenshot on 2026-11-07; the engine applies
+    NOM 690-8(b) and 240-4(d) first and uses that table only as a cap (owner decision 2026-11-07).
+    Compliance: CE, N4105, EN 50549-1, C10/C11, G98, IEEE 1547, UL 1741. Noise 25 dB(A), relative humidity
+    0-100 %, natural convection, LED + app display, 12-year warranty.

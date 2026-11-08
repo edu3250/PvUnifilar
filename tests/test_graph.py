@@ -302,3 +302,10 @@ def test_shared_dc_raceway_with_different_sizes(graph, template, registry) -> No
     result = graph_to_spec(graph, template, registry=registry)
     assert ("conflict", ("S1", "S2")) in _codes(result)
     assert result.spec["circuits"][0]["raceway"]["trade_size_mm"] == 41
+
+
+def test_three_phase_inverter_is_unsupported(graph, template, registry) -> None:
+    graph["nodes"][3]["values"]["model"] = "SOLIS-S5-GC20K-LV"
+    result = graph_to_spec(graph, template, registry=registry)
+    assert any(i.code == "unsupported" and "INV1" in i.node_ids for i in result.issues)
+    assert result.spec["inverters"] == []

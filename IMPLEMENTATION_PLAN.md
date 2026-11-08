@@ -877,6 +877,63 @@ NOM text).
 **Tests**: tests/test_string_ocpd_poles.py.
 **Status**: Complete (PR #66)
 
+#### Stage 3.9: Microinverters (engine and editor; plugin later)
+Owner request 2026-11-07, Growatt NEO 1600~2500M-X2 first. Decisions: AC branch limit = NOM
+690-8(b) 1.25 x sum(Iac) <= ITM <= 240-4(d), manufacturer table as an extra cap; module input
+check Isc <= input Isc max (no 1.25); service voltage must be inside the micro AC range; branch
+protection ITM per branch in the load centre by default, AC combiner box as an option; no
+monitoring gateway; one symbol per micro; no mixed micro + string systems; no fixed branch limit
+(705-12(d) busbar check); one micro model per design.
+
+##### Stage 3.9.1: microinverter catalogue type
+**Goal**: `microinverter` record type (`pvsld.catalogue.microinverters`), separate from string
+inverters, with the manufacturer's trunk-cable and drop-cable tables; Growatt NEO M-X2 record.
+**Tests**: tests/test_catalogue_micro.py.
+**Status**: Complete (PR #69)
+
+##### Stage 3.9.2: microinverter rules (module inputs, service voltage, AC branch)
+**Goal**: pure rule functions in `pvsld.sizing.micro`: MIC-001..005 module on each input (Voc cold,
+Isc without 1.25, Imp clipping info, recommended power info/warning, hot Vmp), MIC-010 service
+voltage inside the AC window, MIC-011..013 AC branch (1.25 x sum <= breaker <= 240-4(d), then
+the manufacturer cap and trunk sizes), VD-002 daisy-chain trunk drop, MIC-014 drop-cable length.
+**Tests**: tests/test_micro_rules.py (the owner's NOM / Growatt tables of 2026-11-07).
+**Status**: Complete (PR #70)
+
+##### Stage 3.9.3: spec AC branches, validation, evaluate_draft / evaluate_choices
+**Goal**: schema 0.2.0: an inverter of type `micro` with its `micro` block (AC window, recommended
+module power, manufacturer trunk / drop-cable tables) and `ac_branches` (units with the module on
+each input, trunk size and spacing, branch breaker); 0.1.0 documents stay valid. The rules move to
+`pvsld.core.micro` (plain data) and run in the rule pack; `calc.derive` adds the micro array power
+and the branch circuit current and daisy-chain drop; the draft accepts micros (one model, no
+mixing with string inverters); `evaluate_choices` checks each branch breaker (MIC-011) and the
+branch conductor; the drawing refuses micro designs with a clear message (plugin stage later).
+AC combiner box left pending in the capability matrix (owner: both layouts valid, default ITM per
+branch in the load centre).
+**Tests**: tests/test_micro_spec.py.
+**Status**: Complete (PR #71)
+
+##### Stage 3.9.3b: AC combiner box
+**Goal**: optional `ac_combiner` (id, main breaker, AC SPD): branch breakers at the combiner, one
+output circuit to the main breaker at the load centre. MIC-020 main breaker >= 1.25 x the sum of
+every unit (690-8(b)); MIC-021 warning without an AC SPD; VD-002 on the combiner output;
+`evaluate_choices` checks the main breaker. Owner asked for it in 0.8.0 (2026-11-07).
+**Tests**: tests/test_micro_spec.py (combiner section).
+**Status**: Complete (PR #72)
+
+##### Stage 3.9.4: pvsld.graph micro nodes, palette, capabilities; editor notified
+**Goal**: generated symbols `PVSLD_MICROINV_<n>IN` (inputs A.. on top, AC below) and
+`PVSLD_AC_JBOX` (no library regeneration); palette types `microinverter` (symbol variants, the
+equipment entry names its block), `pv_module`, `ac_junction_box`, `ac_spd`, branch breaker naming
+`ITM-R{n}`, derived names R{n}/C-R{n}/C-CCA/INVM{n}; `graph_to_spec` maps micro drawings: module
+per input, branches by breaker, unit order along the trunk, home run from the junction box,
+trunk size and spacing (drawn or default 1.2 m per module), branch / combiner breakers, the
+`ac_combiner` group node. The editor is notified with the 0.8.0 release.
+**Tests**: tests/test_graph_micro.py, tests/test_micro_symbols.py, palette tests.
+**Status**: Complete (PR #73)
+
+##### Stage 3.9.5: release 0.8.0
+**Status**: In Progress
+
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:
