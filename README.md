@@ -352,7 +352,8 @@ Las decisiones de diseño están en [`docs/decisions/`](docs/decisions/), empeza
 
 ## Alcance y límites
 
-- El catálogo incluido es pequeño  (cada ficha se revisa contra su hoja técnica): módulos Jinko y ET Solar, inversores Growatt MIN y Huawei SUN2000, fusibles gPV Littelfuse y Eaton, interruptores de CD Schneider y Suntree, un seccionador FV Suntree, interruptores Square D QO y cable fotovoltaico Viakon. Lo demás se agrega a tu catálogo local desde su hoja técnica.
+- Con inversor de cadena (hasta dos cadenas) o con microinversores (un modelo por diseño; el plano dibuja hasta 8 en 3 ramas, con o sin caja combinadora de CA). Los microinversores se usan solo cuando los pides.
+- El catálogo incluido es pequeño  (cada ficha se revisa contra su hoja técnica): módulos Jinko y ET Solar, inversores Growatt MIN y Huawei SUN2000, microinversores Growatt NEO, Hoymiles HMS, Enphase IQ8HC y APsystems DS3, fusibles gPV Littelfuse y Eaton, interruptores de CD Schneider y Suntree, un seccionador FV Suntree, interruptores Square D QO y cable fotovoltaico Viakon. Lo demás se agrega a tu catálogo local desde su hoja técnica.
 - El plugin funciona en Claude Code, Copilot CLI y Antigravity CLI. No funciona en claude.ai en el navegador, porque el servidor corre en tu computadora.
 - El DWG y el PDF de AutoCAD necesitan un AutoCAD con licencia en Windows.
 

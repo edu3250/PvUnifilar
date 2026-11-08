@@ -108,7 +108,10 @@ def record_examples(bundled: Path, local: Path) -> dict[str, Any]:
             "or rating, every value as printed with its unit in the field name. In source give "
             "only title, pages, extraction_method and notes; the tool adds the file name, SHA-256 "
             "and the reviewer. Show the values to the user, and after they confirm call "
-            "add_component_to_catalogue."
+            "add_component_to_catalogue. Microinverters (owner criteria): a missing real power is "
+            "the apparent power when the default power factor is at least 0.99; a missing largest "
+            "branch breaker is left out (the NOM limit applies); caps that change with the AC "
+            "voltage keep the 220 V column; say each deduction in source.notes."
         ),
         "examples": examples,
     }
