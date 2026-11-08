@@ -349,7 +349,11 @@ def _design(
                 subject=micro.component_id,
             )
         )
-    sizes = sorted(limits.allowed_trunk_sizes or DEFAULT_TRUNK_SIZES, key=_awg_rank)
+    sizes = (
+        [request.micro_trunk_size]
+        if request.micro_trunk_size is not None
+        else sorted(limits.allowed_trunk_sizes or DEFAULT_TRUNK_SIZES, key=_awg_rank)
+    )
     capacity = {size: micro_rules.branch_limit(limits, size, tables).units for size in sizes}
     best = max(capacity.values(), default=0)
     if best == 0:

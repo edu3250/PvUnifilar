@@ -90,6 +90,11 @@ class SizingRequest(BaseModel):
         description="Design with microinverters: catalogue ids to evaluate or 'auto' for all; "
         "None (default) designs with string inverters (owner: micros only when asked for)",
     )
+    micro_trunk_size: ConductorSize | None = Field(
+        default=None,
+        description="Microinverter designs: fix the trunk cable size of every branch (checked by "
+        "MIC-011/013, not chosen; professional mode)",
+    )
     ac_combiner: bool = Field(
         default=False,
         description="Microinverter designs: put the branch breakers in an AC combiner box with "

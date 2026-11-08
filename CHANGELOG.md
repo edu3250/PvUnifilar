@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Professional mode with microinverters: the project sheet adds "Tipo de inversor", "Microinversor" and "Caja combinadora de CA" (Equipos) and "Calibre del troncal" and "Separación entre microinversores" (Conductores); the sheet designs and draws a micro system, a rejected microinverter or trunk goes back onto its cell, and an older sheet without these rows stays a string design. `SizingRequest.micro_trunk_size` fixes the trunk size of every branch.
+
 - The A3 sheet draws the per-string DC box: each string's gPV fuse (or DC breaker), its own SPD with its earth lead and its own two-pole switch `DCD-<string>`; the box's switches replace the inverter's integrated disconnect in the drawing. Capability `drawing.dc_box_per_string` is now supported.
 
 - The A3 sheet (`a3_plantilla_v1`) draws microinverter designs: each AC branch on its own row with a module on each used input, the units tapping the trunk, the junction box and the home run to the branch breaker; the branch breakers feed the load centre, or sit in the dashed AC combiner with its SPD and the main breaker ITM-1 at the load centre. The memory, the circuit boxes (1: branches, 2: combiner output or the breakers at the load centre), the inverter box and the project line describe the micro design. Up to 8 microinverters in 3 branches; a larger design is calculated but its drawing is refused with a clear message. Generated symbols: the microinverter's DC inputs are optional ports (a free input is not dangling). Capability `drawing.microinverters` is now supported.
