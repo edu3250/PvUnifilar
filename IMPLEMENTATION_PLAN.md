@@ -946,10 +946,15 @@ free inputs on the last unit with a warning; also draw the per-string DC box.
 `pvsld.sizing.micro_sizing` picks the model, units, branches, trunks, breakers and home runs and
 validates the 0.2.0 spec; `MicroCandidate` in the result; MCP and CLI texts describe branches.
 **Tests**: tests/test_micro_sizing.py.
-**Status**: In Progress
+**Status**: Complete (PR #75)
 
 ##### Stage 3.10.2: spec -> editor graph (round trip with graph_to_spec)
-**Status**: Not Started
+**Goal**: `pvsld.graph_export.spec_to_graph(spec)` gives the `pvsld.graph/1` drawing (spec ids,
+catalogue references recovered from manufacturer and model, circuit data on the first cable of
+each path) and the template of the undrawn sections; `graph_to_spec` gives the same design back
+for string inverters (shared and per-string DC box), microinverters and the AC combiner.
+**Tests**: tests/test_graph_export.py.
+**Status**: In Progress
 
 ##### Stage 3.10.3: memoria, BOM and project sheet data with micros
 **Status**: Not Started

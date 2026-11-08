@@ -22,6 +22,7 @@ CORE = (
     "pvsld.sizing.choices",
     "pvsld.sizing.dcbox",
     "pvsld.graph",
+    "pvsld.graph_export",
     "pvsld.capabilities",
 )
 HEAVY = ("ezdxf", "matplotlib", "reportlab", "openpyxl", "mcp", "PIL", "anyio")
