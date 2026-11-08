@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from micro_spec import micro_spec_data
+from micro_spec import combiner_spec_data, micro_spec_data
 from pvsld.capabilities import capabilities
 from pvsld.core.calc import derive
 from pvsld.core.draft import evaluate_draft
@@ -156,7 +156,7 @@ def test_capabilities_list_microinverters() -> None:
     doc = capabilities()
     status = {c["id"]: c["status"] for c in doc["capabilities"]}
     assert status["microinverters"] == "supported"
-    assert status["microinverters.ac_combiner"] == "pending"
+    assert status["microinverters.ac_combiner"] == "supported"
     assert status["drawing.microinverters"] == "pending"
     assert "micro" in doc["limits"]["inverter_types"]
     assert doc["limits"]["max_micro_models"] == 1
@@ -187,3 +187,52 @@ def test_choices_propose_the_nom_breaker() -> None:
     assert checks["ITM-R1.rating_a"].rule_id == "MIC-011"
     updates = {u.target: u for u in report.updates}
     assert updates["ITM-R1.rating_a"].proposed == 30
+
+
+# --- AC combiner box ---------------------------------------------------------------------------
+
+
+def test_a_combiner_design_passes() -> None:
+    data = combiner_spec_data()
+    assert _rules(data) == []
+    circuits = {c.circuit_id: c for c in derive(parse_spec(data)).circuits}
+    assert circuits["C-CCA"].i_max_a == pytest.approx(3 * 11.36)
+
+
+def test_combiner_main_breaker_and_spd() -> None:
+    found = _rules(combiner_spec_data(main_a=40, spd=False))
+    assert ("MIC-020", Severity.ERROR, "ITM-1") in found
+    assert ("MIC-021", Severity.WARNING, "CCA-1") in found
+
+
+@pytest.mark.parametrize(
+    ("change", "fragment"),
+    [
+        (lambda d: d["ac_combiner"].update(main_ocpd="ITM-9"), "unknown main_ocpd"),
+        (lambda d: d["ac_combiner"].update(spd="DPS-9"), "unknown spd"),
+        (lambda d: d["ac_bos"]["ocpds"][1].update(at="CC-1"), "is at 'CCA-1'"),
+        (lambda d: d["ac_bos"]["ocpds"][2].update(at="CCA-1"), "feeds the load centre"),
+    ],
+)
+def test_combiner_references_are_checked(change, fragment) -> None:
+    data = combiner_spec_data()
+    change(data)
+    with pytest.raises(ValidationError, match=fragment):
+        parse_spec(data)
+
+
+def test_a_combiner_needs_branches(data) -> None:
+    data["ac_combiner"] = {"id": "CCA-1", "main_ocpd": "ITM-R1"}
+    data["ac_branches"] = []
+    with pytest.raises(ValidationError, match="ac_combiner needs ac_branches"):
+        parse_spec(data)
+
+
+def test_choices_check_the_combiner_main_breaker() -> None:
+    report = evaluate_choices(combiner_spec_data(main_a=40))
+    checks = {c.target: c for c in report.checks}
+    assert not checks["ITM-1.rating_a"].ok
+    assert checks["ITM-1.rating_a"].rule_id == "MIC-020"
+    assert checks["ITM-R1.rating_a"].ok
+    assert checks["C-CCA.conductors.size"].ok
+    assert {u.target: u.proposed for u in report.updates}["ITM-1.rating_a"] == 45

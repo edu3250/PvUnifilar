@@ -462,6 +462,18 @@ def _circuit_values(
             vd_pct = voltage_drop_ac_pct(
                 size, circuit.length_m, i_max, inverter.vac_v, inverter.phases, tables
             )
+        elif (
+            circuit.kind == "inverter_output"
+            and spec.ac_combiner is not None
+            and _base_id(circuit.from_) == spec.ac_combiner.id
+        ):
+            # The AC combiner output: every branch's units.
+            micro = inverters[spec.ac_branches[0].microinverters[0].inverter]
+            i_max = sum(
+                len(b.microinverters) * inverters[b.microinverters[0].inverter].iac_max_a
+                for b in spec.ac_branches
+            )
+            vd_pct = voltage_drop_ac_pct(size, circuit.length_m, i_max, micro.vac_v, 2, tables)
         elif circuit.kind == "inverter_output" and branch is not None:
             # A microinverter branch: the home run from the breaker plus the daisy-chained trunk.
             micro = inverters[branch.microinverters[0].inverter]

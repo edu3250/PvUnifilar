@@ -35,6 +35,8 @@ MICRO = (
     "MIC-012",
     "MIC-013",
     "MIC-014",
+    "MIC-020",
+    "MIC-021",
     "VD-002",
 )
 # STR-007 and CON-006 have no Mexican checklist item in the vault ("MX" column is "—"), nor do

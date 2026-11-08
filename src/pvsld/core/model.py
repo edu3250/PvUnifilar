@@ -13,7 +13,8 @@ on them.
 Schema 0.2.0 (Stage 3.9.3) adds microinverters: an inverter of type ``micro`` carries a ``micro``
 block with its installation limits, and ``ac_branches`` lists the AC branches, each with its units
 (``id``, model, module on each input), its trunk cable and its breaker. A 0.1.0 document is still
-valid; one that uses ``ac_branches`` must declare 0.2.0.
+valid; one that uses ``ac_branches`` must declare 0.2.0. An optional ``ac_combiner`` gathers the
+branch breakers (``at`` the combiner), an AC SPD and one main breaker towards the load centre.
 
 Example::
 
@@ -290,6 +291,15 @@ class AcBranch(_Strict):
     ocpd: str = Field(min_length=1, description="Id of the branch breaker in ac_bos.ocpds")
 
 
+class AcCombiner(_Strict):
+    """AC combiner box of a microinverter design: the branch breakers, an AC SPD and one main
+    breaker feeding the load centre (schema 0.2.0)."""
+
+    id: str = Field(min_length=1)
+    main_ocpd: str = Field(min_length=1, description="Id of the main breaker in ac_bos.ocpds")
+    spd: str | None = Field(default=None, description="Id of the AC SPD in ac_bos.spds")
+
+
 class Combiner(_Strict):
     id: str = Field(min_length=1)
     inputs: PositiveInt
@@ -527,6 +537,9 @@ class PvSystemSpec(_Strict):
         default_factory=list, description="At least one string unless the design uses ac_branches"
     )
     ac_branches: list[AcBranch] = Field(default_factory=list, description="Schema 0.2.0")
+    ac_combiner: AcCombiner | None = Field(
+        default=None, description="Schema 0.2.0: AC combiner box of the branches"
+    )
     dc_bos: DcBos
     ac_bos: AcBos
     circuits: list[Circuit] = Field(min_length=1)
@@ -546,6 +559,8 @@ class PvSystemSpec(_Strict):
         ids += [s.id for s in self.strings]
         ids += [b.id for b in self.ac_branches]
         ids += [u.id for b in self.ac_branches for u in b.microinverters]
+        if self.ac_combiner is not None:
+            ids.append(self.ac_combiner.id)
         ids += [c.id for c in self.dc_bos.combiners]
         ids += [d.id for d in self.dc_bos.disconnects]
         ids += [s.id for s in self.dc_bos.spds]
@@ -632,10 +647,10 @@ class PvSystemSpec(_Strict):
         return self
 
     def _branch_problems(self, modules: set[str], inverters: Mapping[str, Inverter]) -> list[str]:
-        """Cross references of ``ac_branches`` (schema 0.2.0)."""
+        """Cross references of ``ac_branches`` and ``ac_combiner`` (schema 0.2.0)."""
         if not self.ac_branches:
-            return []
-        problems: list[str] = []
+            return ["ac_combiner needs ac_branches"] if self.ac_combiner is not None else []
+        problems: list[str] = self._combiner_problems()
         if self.schema_version != MICRO_SCHEMA_VERSION:
             problems.append(
                 f"ac_branches needs schema_version {MICRO_SCHEMA_VERSION!r} "
@@ -670,6 +685,31 @@ class PvSystemSpec(_Strict):
                 problems.append(
                     f"inverter {inverter.id}: qty {inverter.qty} but {units[inverter.id]} "
                     "unit(s) in ac_branches"
+                )
+        return problems
+
+    def _combiner_problems(self) -> list[str]:
+        combiner = self.ac_combiner
+        if combiner is None:
+            return []
+        problems: list[str] = []
+        ocpds = {o.id: o for o in self.ac_bos.ocpds}
+        main = ocpds.get(combiner.main_ocpd)
+        if main is None:
+            problems.append(f"ac_combiner {combiner.id}: unknown main_ocpd {combiner.main_ocpd!r}")
+        elif main.at == combiner.id:
+            problems.append(
+                f"ac_combiner {combiner.id}: main_ocpd {main.id} feeds the load centre; its "
+                "'at' is the panel, not the combiner"
+            )
+        if combiner.spd is not None and combiner.spd not in {s.id for s in self.ac_bos.spds}:
+            problems.append(f"ac_combiner {combiner.id}: unknown spd {combiner.spd!r}")
+        for branch in self.ac_branches:
+            ocpd = ocpds.get(branch.ocpd)
+            if ocpd is not None and ocpd.at != combiner.id:
+                problems.append(
+                    f"ac_branch {branch.id}: with an ac_combiner its breaker {ocpd.id} is "
+                    f"at {combiner.id!r} (got {ocpd.at!r})"
                 )
         return problems
 

@@ -105,8 +105,9 @@ CAPABILITIES: tuple[Capability, ...] = (
     Capability(
         "microinverters.ac_combiner",
         "Caja combinadora de CA",
-        "pending",
-        "ITM por rama, DPS de CA e ITM general en una caja antes del centro de carga.",
+        "supported",
+        "ITM por rama, DPS de CA e ITM general en una caja antes del centro de carga "
+        "(MIC-020, MIC-021); sin caja, un ITM por rama en el centro de carga.",
     ),
     Capability(
         "microinverters.mixed",
