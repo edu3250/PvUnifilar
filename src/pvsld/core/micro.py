@@ -31,6 +31,11 @@ Owner decisions of 2026-11-07, checked against NOM-001-SEDE-2012:
   (14 AWG 15 A, 12 AWG 20 A, 10 AWG 30 A). The manufacturer's table (units per trunk cable and
   largest breaker) is an extra cap applied after the NOM.
 
+* **AC combiner box** (MIC-020, MIC-021). When the branch breakers sit in an AC combiner, its
+  main breaker carries every unit: next standard rating >= 1.25 x the sum of all the units'
+  output currents (690-8(a)(3), 690-8(b)(1)); error below that. The owner's combiner holds an AC
+  SPD: a warning when the design does not declare one.
+
 * **Voltage drop** (VD-002, warning as for any AC circuit). The trunk is a daisy chain: the run
   from the branch breaker to the first unit carries every unit's current, and each segment between
   units carries the current of the units after it. The cable from a unit's AC sub connector has a
@@ -340,6 +345,46 @@ def branch_findings(
                     "fabricante).",
                 )
             )
+    return found
+
+
+# --- AC combiner box -----------------------------------------------------------------------------
+
+
+def combiner_findings(
+    *,
+    combiner_id: str,
+    main_ocpd_id: str,
+    main_rating_a: float,
+    total_current_a: float,
+    has_spd: bool,
+    tables: NomTables,
+) -> list[MicroFinding]:
+    """MIC-020 (main breaker of the combiner) and MIC-021 (its AC SPD)."""
+    found: list[MicroFinding] = []
+    minimum = calc.ocpd_min_a(total_current_a)
+    if main_rating_a < minimum:
+        needed = calc.next_standard_ocpd_a(minimum, tables)
+        found.append(
+            MicroFinding(
+                "MIC-020",
+                Severity.ERROR,
+                main_ocpd_id,
+                f"El ITM general {main_ocpd_id} de la caja combinadora {combiner_id} es de "
+                f"{_g(main_rating_a)} A y las ramas suman {_n(total_current_a, 2)} A; debe ser al "
+                f"menos 1.25 × {_n(total_current_a, 2)} A = {_n(minimum, 2)} A (NOM 690-8(b)); "
+                f"use {_g(needed)} A.",
+            )
+        )
+    if not has_spd:
+        found.append(
+            MicroFinding(
+                "MIC-021",
+                Severity.WARNING,
+                combiner_id,
+                f"La caja combinadora {combiner_id} no declara DPS de CA; agréguelo.",
+            )
+        )
     return found
 
 

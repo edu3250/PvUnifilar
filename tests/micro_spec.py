@@ -70,3 +70,34 @@ def micro_spec_data(*, units: int = 2, trunk: str = "10 AWG", ocpd_a: float = 30
         }
     ]
     return data
+
+
+def combiner_spec_data(*, main_a: float = 45, spd: bool = True) -> dict[str, Any]:
+    """Two branches (2 + 1 NEO 2500M-X2) in AC combiner CCA-1, main breaker ITM-1 at CC-1."""
+    data = micro_spec_data(units=3)
+    branch = data["ac_branches"][0]
+    second = branch["microinverters"].pop()
+    data["ac_branches"].append({**branch, "id": "R2", "ocpd": "ITM-R2", "microinverters": [second]})
+    data["ac_combiner"] = {"id": "CCA-1", "main_ocpd": "ITM-1", "spd": "DPS-CA1" if spd else None}
+    r1 = {**data["ac_bos"]["ocpds"][0], "role": "other", "backfed": False, "at": "CCA-1"}
+    data["ac_bos"]["ocpds"] = [
+        r1,
+        {**r1, "id": "ITM-R2", "rating_a": 15},
+        {**r1, "id": "ITM-1", "role": "I1", "rating_a": main_a, "backfed": True, "at": "CC-1"},
+    ]
+    data["ac_bos"]["spds"][0]["at"] = "CCA-1"
+    data["ac_bos"]["point_of_connection"]["breaker"] = "ITM-1"
+    c_r1 = data["circuits"][0]
+    data["circuits"] = [
+        c_r1,
+        {**c_r1, "id": "C-R2", "from": "R2", "to": "ITM-R2"},
+        {
+            **c_r1,
+            "id": "C-CCA",
+            "from": "CCA-1",
+            "to": "ITM-1",
+            "conductors": {**c_r1["conductors"], "size": "8 AWG"},
+            "egc": {"size": "8 AWG", "type": "desnudo"},
+        },
+    ]
+    return data

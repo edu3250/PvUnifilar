@@ -910,6 +910,14 @@ branch conductor; the drawing refuses micro designs with a clear message (plugin
 AC combiner box left pending in the capability matrix (owner: both layouts valid, default ITM per
 branch in the load centre).
 **Tests**: tests/test_micro_spec.py.
+**Status**: Complete (PR #71)
+
+##### Stage 3.9.3b: AC combiner box
+**Goal**: optional `ac_combiner` (id, main breaker, AC SPD): branch breakers at the combiner, one
+output circuit to the main breaker at the load centre. MIC-020 main breaker >= 1.25 x the sum of
+every unit (690-8(b)); MIC-021 warning without an AC SPD; VD-002 on the combiner output;
+`evaluate_choices` checks the main breaker. Owner asked for it in 0.8.0 (2026-11-07).
+**Tests**: tests/test_micro_spec.py (combiner section).
 **Status**: In Progress
 
 ##### Stage 3.9.4: pvsld.graph micro nodes, palette, capabilities; editor notified

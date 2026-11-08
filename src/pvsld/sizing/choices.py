@@ -25,6 +25,7 @@ Component           Values                                      Rule
 ``DCD-CD1``         ``model``, ``ie_a``, ``ue_v``, ``poles``    DIS-002
 ITM-1 (PCC breaker) ``rating_a``; ``model``, ``kaic_ka``        OCP-005; OCP-006
 branch ITMs         ``rating_a``; ``model``, ``kaic_ka``        MIC-011; OCP-006
+AC combiner main    ``rating_a``; ``model``, ``kaic_ka``        MIC-020; OCP-006
 ``main_breakers``   ``model``, ``kaic_ka``                      OCP-006
 circuits            ``conductors.size`` (+ ``egc``, ``neutral``) CON-002, VD-001/002
 raceways            ``raceway.trade_size_mm``                   CON-006
@@ -783,6 +784,90 @@ class _Evaluator:
                 why_es=why,
             )
 
+    def combiner_main(self) -> None:
+        """MIC-020 / OCP-006 for the main breaker of the AC combiner box."""
+        spec = self.spec
+        combiner = spec.ac_combiner
+        if combiner is None:
+            return
+        ocpd = next(o for o in spec.ac_bos.ocpds if o.id == combiner.main_ocpd)
+        inverters = {i.id: i for i in spec.inverters}
+        current = sum(
+            len(b.microinverters) * inverters[b.microinverters[0].inverter].iac_max_a
+            for b in spec.ac_branches
+        )
+        minimum = calc.ocpd_min_a(current)
+        standard = calc.next_standard_ocpd_a(minimum, self.tables)
+        fault = spec.utility.available_fault_current_ka
+        choice, found = bos.select_ac_breaker(
+            position=ocpd.id,
+            rating_a=standard,
+            poles=ocpd.poles,
+            voltage_v=AC_BREAKER_VOLTAGE_V,
+            fault_ka=fault,
+            breakers=self.registry.ac_breakers(),
+        )
+        for issue in found:
+            self.note(ocpd.id, issue)
+        why = (
+            f"El ITM general de la caja {combiner.id} (1.25 × {_n(current, 2)} A de todas las "
+            f"ramas = {_n(minimum)} A): "
+            + (
+                f"{choice.device_id}, {_g(choice.rating_a)} A, {_g(choice.interrupting_ka)} kA."
+                if choice
+                else f"{_g(standard)} A."
+            )
+        )
+        if ocpd.model is not None or choice is not None:
+            self.record(
+                ocpd.id,
+                "model",
+                ocpd.model,
+                rule_id="OCP-006",
+                problem=None
+                if ocpd.model is None
+                else self._ac_model_problem(
+                    ocpd.id,
+                    ocpd.model,
+                    ocpd.rating_a,
+                    rating_a=minimum,
+                    poles=ocpd.poles,
+                    fault_ka=fault,
+                    exact=False,
+                ),
+                ok_es=f"{ocpd.id}: {ocpd.model} cumple.",
+                proposed=choice.device_id if choice else None,
+                why_es=why,
+                check=ocpd.model is not None,
+            )
+        self.record(
+            ocpd.id,
+            "rating_a",
+            ocpd.rating_a,
+            rule_id="MIC-020",
+            problem=None
+            if ocpd.rating_a >= minimum
+            else (
+                "MIC-020",
+                Severity.ERROR,
+                f"{ocpd.id}: {_g(ocpd.rating_a)} A es menor que 1.25 × {_n(current, 2)} A = "
+                f"{_n(minimum)} A (NOM 690-8(b)(1)).",
+            ),
+            ok_es=f"{ocpd.id}: {_g(ocpd.rating_a)} A >= {_n(minimum)} A (1.25 × suma de ramas).",
+            proposed=choice.rating_a if choice else standard,
+            why_es=why,
+        )
+        self.record(
+            ocpd.id,
+            "kaic_ka",
+            ocpd.kaic_ka,
+            rule_id="OCP-006",
+            problem=self._kaic_problem(ocpd.id, ocpd.kaic_ka, fault),
+            ok_es=f"{ocpd.id}: {_g(ocpd.kaic_ka)} kA >= {_g(fault)} kA de falla.",
+            proposed=choice.interrupting_ka if choice else None,
+            why_es=why,
+        )
+
     def itm(self) -> None:
         spec = self.spec
         if spec.ac_branches:
@@ -975,6 +1060,12 @@ class _Evaluator:
                     tables=self.tables,
                 )
                 limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
+            elif spec.ac_combiner is not None and source == spec.ac_combiner.id:
+                micro = inverters[spec.ac_branches[0].microinverters[0].inverter]
+                drop = lambda size, i=micro, m=length, a=cv.i_max_a: calc.voltage_drop_ac_pct(  # noqa: E731
+                    size, m, a, i.vac_v, 2, self.tables
+                )
+                limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
             else:
                 inverter = inverters[source]
                 drop = lambda size, i=inverter, m=length: calc.voltage_drop_ac_pct(  # noqa: E731
@@ -1135,6 +1226,7 @@ def evaluate_choices(
     evaluator.spds()
     evaluator.itm()
     evaluator.branch_breakers()
+    evaluator.combiner_main()
     evaluator.mains()
     evaluator.conductors()
     evaluator.raceways()

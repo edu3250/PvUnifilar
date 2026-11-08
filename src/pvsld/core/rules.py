@@ -9,7 +9,8 @@ MCP resource.
 
 Implemented in this version: VOLT-001, STR-001, STR-004, STR-007, CON-003, CON-006, PCC-002,
 MET-001, DIS-003 and DIS-004, plus the microinverter rules of schema 0.2.0 (MIC-001 to MIC-005,
-MIC-010 to MIC-014 and VD-002 for the AC branch trunk, :mod:`pvsld.core.micro`). The remaining
+MIC-010 to MIC-014, MIC-020/021 for the AC combiner box and VD-002 for the AC branch trunk and
+the combiner output, :mod:`pvsld.core.micro`). The remaining
 rules of the vault pack (98 in total) arrive with later stages.
 
 Scope notes, where the vault definition needs data that schema 0.1.0 does not carry:
@@ -613,6 +614,7 @@ def _micro_findings(ctx: RuleContext) -> list[micro_rules.MicroFinding]:
         found += [replace(f, subject=inverter.id) for f in own]
     ratings = {o.id: o.rating_a for o in spec.ac_bos.ocpds}
     home_runs = {calc_base(c.from_): c for c in spec.circuits if c.kind == "inverter_output"}
+    found += _combiner_findings(ctx, inverters, ratings)
     for branch in spec.ac_branches:
         inverter = inverters[branch.microinverters[0].inverter]
         limits = micro_rules.limits_from_spec(inverter)
@@ -652,6 +654,43 @@ def _micro_findings(ctx: RuleContext) -> list[micro_rules.MicroFinding]:
             )
             if cable is not None:
                 found.append(replace(cable, subject=unit.id))
+    return found
+
+
+def _combiner_findings(
+    ctx: RuleContext, inverters: dict[str, Inverter], ratings: dict[str, float]
+) -> list[micro_rules.MicroFinding]:
+    """MIC-020/021 and the VD-002 of the combiner output circuit."""
+    spec = ctx.spec
+    combiner = spec.ac_combiner
+    if combiner is None:
+        return []
+    total = sum(
+        len(b.microinverters) * inverters[b.microinverters[0].inverter].iac_max_a
+        for b in spec.ac_branches
+    )
+    found = micro_rules.combiner_findings(
+        combiner_id=combiner.id,
+        main_ocpd_id=combiner.main_ocpd,
+        main_rating_a=ratings[combiner.main_ocpd],
+        total_current_a=total,
+        has_spd=combiner.spd is not None,
+        tables=ctx.tables,
+    )
+    output = {c.id: c for c in spec.circuits if calc_base(c.from_) == combiner.id}
+    limit = spec.standards.vd_limits_pct.ac
+    for values in ctx.derived.circuits:
+        if values.circuit_id in output and values.vd_pct is not None and values.vd_pct > limit:
+            found.append(
+                micro_rules.MicroFinding(
+                    "VD-002",
+                    Severity.WARNING,
+                    values.circuit_id,
+                    f"La caída de tensión del circuito {values.circuit_id} de la caja "
+                    f"combinadora ({_n(values.vd_pct, 2)} %) excede el límite de "
+                    f"{_n(limit, 2)} %; acorte el recorrido o use un calibre mayor.",
+                )
+            )
     return found
 
 
@@ -769,8 +808,26 @@ MICRO_RULES: tuple[RuleDef, ...] = (
         check=_micro_check("MIC-014"),
     ),
     RuleDef(
+        id="MIC-020",
+        title_es="ITM general de la caja combinadora de CA: 1.25 × suma de las ramas",
+        severity="E",
+        basis=("NOM",),
+        cites=(Cite("NOM-001-SEDE-2012", "690-8(a)(3)"), Cite("NOM-001-SEDE-2012", "690-8(b)(1)")),
+        mx_ids=(),
+        check=_micro_check("MIC-020"),
+    ),
+    RuleDef(
+        id="MIC-021",
+        title_es="DPS de CA en la caja combinadora",
+        severity="W",
+        basis=("Diseño",),
+        cites=(Cite("Decisión del propietario", "caja combinadora de CA, 2026-11-07"),),
+        mx_ids=(),
+        check=_micro_check("MIC-021"),
+    ),
+    RuleDef(
         id="VD-002",
-        title_es="Caída de tensión de la rama de microinversores",
+        title_es="Caída de tensión de la rama de microinversores y de la caja combinadora",
         severity="W",
         basis=("Diseño",),
         cites=(Cite("NOM-001-SEDE-2012", "210-19(a) nota 4"),),
