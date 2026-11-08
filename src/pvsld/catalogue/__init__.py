@@ -22,6 +22,12 @@ from pvsld.catalogue.inverters import (
     InverterProtection,
     InverterVariant,
 )
+from pvsld.catalogue.microinverters import (
+    Microinverter,
+    MicroinverterFamily,
+    MicroinverterVariant,
+    TrunkCable,
+)
 from pvsld.catalogue.modules import ElectricalPoint, ModuleVariant, PVModule, PVModuleFamily
 from pvsld.catalogue.protection import (
     AcBreaker,
@@ -83,6 +89,9 @@ __all__ = [
     "InverterProtection",
     "InverterVariant",
     "LoadedRecord",
+    "Microinverter",
+    "MicroinverterFamily",
+    "MicroinverterVariant",
     "ModuleVariant",
     "PVModule",
     "PVModuleFamily",
@@ -91,6 +100,7 @@ __all__ = [
     "Provenance",
     "SwitchRating",
     "Terminals",
+    "TrunkCable",
     "UnknownComponentError",
     "load_records",
     "read_record",

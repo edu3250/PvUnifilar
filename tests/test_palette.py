@@ -85,7 +85,9 @@ def test_engine_types_have_no_manufacturer(palette: Palette) -> None:
 
 def test_equipment_comes_from_the_reviewed_catalogue(palette: Palette) -> None:
     registry = ComponentRegistry.load(data_path("datasheets/records"))
-    expected = {c.component_id for c in registry if c.component_type != "conductor"}
+    # Microinverters join the palette with the graph support (Stage 3.9.4).
+    skipped = {"conductor", "microinverter"}
+    expected = {c.component_id for c in registry if c.component_type not in skipped}
     assert {e.component_id for e in palette.equipment} == expected
     for entry in palette.equipment:
         assert entry.provenance.reviewed_by
