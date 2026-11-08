@@ -1094,6 +1094,90 @@ def combiner_box(n_strings: int, *, name: str | None = None) -> SymbolSpec:
 COMBINER_BOX = combiner_box(2, name="PVSLD_COMBINER")
 
 
+# --- Microinverter with its inputs and the AC junction box (Stage 3.9.4) ----------------------
+
+MAX_MICRO_INPUTS = 8
+MICRO_INPUT_IDS = "ABCDEFGH"
+_MICRO_PITCH = 7.5
+
+
+def microinverter_name(n_inputs: int) -> str:
+    """Block name of a microinverter with ``n_inputs`` DC inputs, e.g. ``PVSLD_MICROINV_4IN``."""
+    return f"PVSLD_MICROINV_{n_inputs}IN"
+
+
+def microinverter(n_inputs: int) -> SymbolSpec:
+    """A microinverter with one DC input per module (``A``, ``B``...) on top and its AC output
+    below, to tap the AC trunk (owner decision 2026-11-07, after the Enphase IQ8 diagrams).
+
+    The CFE inverter square (diagonal, DC sign, sine) widens with the inputs, 7.5 mm apart; the
+    library keeps the one-input ``PVSLD_MICROINV`` for the legend and the generator asks for
+    ``PVSLD_MICROINV_<n>IN``.
+
+    Raises:
+        ValueError: ``n_inputs`` is outside ``1..MAX_MICRO_INPUTS``.
+    """
+    if not 1 <= n_inputs <= MAX_MICRO_INPUTS:
+        raise ValueError(f"a microinverter takes 1 to {MAX_MICRO_INPUTS} inputs, not {n_inputs}")
+    width = max(15.0, _MICRO_PITCH * n_inputs)
+    xs = [_r(width / 2 + _MICRO_PITCH * (i - (n_inputs - 1) / 2)) for i in range(n_inputs)]
+    geometry: tuple[Primitive, ...] = (
+        Polyline(_rect(0, -7.5, width, 7.5), _EQ_AC, closed=True),
+        Line(0, -7.5, width, 7.5, _EQ_AC),
+        Line(2, 4.5, 6.5, 4.5, _EQ_AC),
+        Line(2, 3, 6.5, 3, _EQ_AC),
+        Polyline(_sine(_r(width - 4), -3.8, 4.5, 1.2, steps=12), _EQ_AC),
+        Label(_r(width + 2), -1.25, TEXT_HEIGHT_MM, "uINV"),
+    )
+    return _spec(
+        microinverter_name(n_inputs),
+        f"Microinversor de {n_inputs} entrada{'s' if n_inputs > 1 else ''}",
+        "pvsld (composición) sobre CFE G0100-04 Apéndice C (inversor)",
+        _EQ_AC,
+        geometry,
+        (
+            *(Port(MICRO_INPUT_IDS[i], x, 7.5, "up", "DC") for i, x in enumerate(xs)),
+            Port("AC", _r(width / 2), -7.5, "down", "AC"),
+        ),
+        tag_xy=(_r(width + 2), 5),
+        desc_xy=(_r(width + 2), -6),
+        extra=(
+            AttDef("N_INPUTS", "Entradas de CD", 0, 0, visible=False, default=str(n_inputs)),
+            *_hidden(
+                ("MFR", "Fabricante"),
+                ("MODEL", "Modelo"),
+                ("PAC_W", "Potencia CA nominal (W)"),
+                ("VAC_V", "Tensión CA nominal (V)"),
+                ("BRANCH", "Rama de CA"),
+            ),
+        ),
+        family=F_CONV,
+        note=(
+            "No official symbol. The CFE inverter square widened to hold one DC input per module "
+            "on top (A, B... 7.5 mm apart) and the AC output below; the generator defines it per "
+            "input count."
+        ),
+    )
+
+
+AC_JUNCTION_BOX = _spec(
+    "PVSLD_AC_JBOX",
+    "Caja de conexiones de CA (fin del cable troncal)",
+    "pvsld (composición) sobre CFE G0100-04 Apéndice D, fig. D1 (bloque rotulado)",
+    _EQ_AC,
+    (
+        Polyline(_rect(0, -3, 8, 3), _EQ_AC, closed=True),
+        Label(1.5, -1.25, TEXT_HEIGHT_MM, "JB"),
+    ),
+    (Port("IN", 0, 0, "left", "AC"), Port("OUT", 8, 0, "right", "AC")),
+    family=F_ANNOT,
+    note=(
+        "Labelled box where the microinverters' AC trunk cable ends and the home run to the "
+        "branch breaker starts (Enphase diagrams). Generated on demand, not in the legend."
+    ),
+)
+
+
 # --- PV string with every module (owner decision 2026-10-07) ----------------------------------
 
 MODULES_PER_ROW = 6
@@ -2344,6 +2428,9 @@ SYMBOLS: Mapping[str, SymbolSpec] = {spec.name: spec for spec in LIBRARY}
 _COMBINER_NAME = re.compile(r"PVSLD_COMBINER_([1-9][0-9]?)S")
 _PV_STRING_NAME = re.compile(r"PVSLD_PV_STRING_([1-9][0-9]?)M_(UP|DN)")
 _DC_DISCONNECT_NAME = re.compile(r"PVSLD_DC_DISCONNECT_([1-9][0-9]?)S")
+_MICROINVERTER_NAME = re.compile(r"PVSLD_MICROINV_([1-9])IN")
+GENERATED: Mapping[str, SymbolSpec] = {AC_JUNCTION_BOX.name: AC_JUNCTION_BOX}
+"""Fixed blocks the generator defines on demand that the legend does not list."""
 
 
 def get_symbol(name: str) -> SymbolSpec:
@@ -2352,7 +2439,9 @@ def get_symbol(name: str) -> SymbolSpec:
     Besides the blocks of :data:`LIBRARY`, ``PVSLD_COMBINER_<n>S`` names the combiner box for
     ``n`` strings (:func:`combiner_box`) and ``PVSLD_PV_STRING_<n>M_UP|DN`` a string with its
     ``n`` modules drawn (:func:`pv_string`) and ``PVSLD_DC_DISCONNECT_<n>S`` the DC disconnect
-    of ``n`` strings (:func:`dc_disconnect_multi`); the generator defines them on demand.
+    of ``n`` strings (:func:`dc_disconnect_multi`), ``PVSLD_MICROINV_<n>IN`` a microinverter
+    with ``n`` inputs (:func:`microinverter`) and :data:`GENERATED` the fixed blocks outside the
+    legend (``PVSLD_AC_JBOX``); the generator defines them on demand.
 
     Raises:
         KeyError: the library has no such block.
@@ -2370,4 +2459,9 @@ def get_symbol(name: str) -> SymbolSpec:
     match = _DC_DISCONNECT_NAME.fullmatch(name)
     if match and 1 <= int(match.group(1)) <= MAX_DC_DISCONNECT_POLES:
         return dc_disconnect_multi(int(match.group(1)))
+    match = _MICROINVERTER_NAME.fullmatch(name)
+    if match and 1 <= int(match.group(1)) <= MAX_MICRO_INPUTS:
+        return microinverter(int(match.group(1)))
+    if name in GENERATED:
+        return GENERATED[name]
     raise KeyError(f"unknown symbol {name!r}; library has {', '.join(SYMBOLS)}")

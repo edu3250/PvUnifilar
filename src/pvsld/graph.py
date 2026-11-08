@@ -23,6 +23,17 @@ engine's selection; each such value is listed in :attr:`GraphResult.filled` so t
 it. Nothing else is invented: a missing value stays missing and :func:`pvsld.core.draft.
 evaluate_draft` reports it.
 
+**Microinverters** (schema 0.2.0, Stage 3.9.4). A ``microinverter`` node has one DC port per
+input (``A``, ``B``...) and an ``AC`` port; each ``pv_module`` node reaches one input (through
+connectors). The microinverters whose AC output first reaches the same breaker form an AC
+branch ``R<n>`` (branches numbered in the order of their breaker ids), ordered along the trunk
+by cable distance from the breaker. The cables from an ``ac_junction_box`` (or from the first
+unit's tap) to the breaker are the home run ``C-R<n>``; the rest is the trunk, whose drawn size
+is the branch ``trunk_size`` (else the smallest manufacturer size that takes the units) and whose
+lengths give ``spacing_m`` (else 1.2 m per connected module). An ``ac_combiner`` group node holds
+the branch breakers and an AC SPD; the first breaker outside it towards the load centre is its
+main breaker, fed by ``C-CCA``.
+
 **No node is dropped.** Every node ends in :attr:`GraphResult.mapped` (the spec path it became) or
 in :attr:`GraphResult.issues` (why not). What the engine does not cover yet (a second inverter,
 a third string) is still written to the specification, and the draft evaluation marks it
@@ -32,6 +43,7 @@ a third string) is still written to the specification, and the draft evaluation 
 from __future__ import annotations
 
 import copy
+import functools
 import re
 from collections import deque
 from collections.abc import Iterable, Mapping
@@ -40,15 +52,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from pvsld.catalogue import ComponentRegistry, UnknownComponentError
+from pvsld.catalogue import ComponentRegistry, Microinverter, UnknownComponentError
 from pvsld.catalogue import Inverter as CatalogueInverter
 from pvsld.catalogue import PVModule as CatalogueModule
 from pvsld.core import calc
-from pvsld.core.model import SCHEMA_VERSION, Site, Standards, Utility
+from pvsld.core import micro as micro_rules
+from pvsld.core.model import MICRO_SCHEMA_VERSION, SCHEMA_VERSION, Site, Standards, Utility
 from pvsld.core.tables import get_tables
 from pvsld.resources import data_path
 from pvsld.sizing import adapters, bos
 from pvsld.sizing.engine import AC_BREAKER_VOLTAGE_V
+from pvsld.sizing.micro import limits_of as micro_limits_of
 from pvsld.sizing.models import SUPPORTED_SYSTEMS, Routing
 
 FORMAT = "pvsld.graph/1"
@@ -56,7 +70,15 @@ GROUP_TYPE = "dc_box"
 BOX_CHILD_TYPES = frozenset(
     {"pv_connector", "terminal", "dc_fuse_holder", "dc_breaker", "dc_spd", "dc_switch"}
 )
-WIRING_TYPES = frozenset({"junction", "terminal", "pv_connector"})
+AC_GROUP_TYPE = "ac_combiner"
+AC_COMBINER_CHILD_TYPES = frozenset({"ac_breaker", "ac_spd", "junction", "terminal"})
+GROUP_CHILDREN: dict[str, frozenset[str]] = {
+    GROUP_TYPE: BOX_CHILD_TYPES,
+    AC_GROUP_TYPE: AC_COMBINER_CHILD_TYPES,
+}
+WIRING_TYPES = frozenset({"junction", "terminal", "pv_connector", "ac_junction_box"})
+MICRO_SPACING_PER_INPUT_M = 1.2
+"""Default trunk length between two microinverters, per module connected to each."""
 DEFAULTS = Routing()
 """The engine's defaults for what the drawing does not give (25 m DC, 30 m AC, 25 mm,
 20 deg tilt, 180 deg azimuth)."""
@@ -71,7 +93,9 @@ class GraphNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1)
-    type: str = Field(min_length=1, description="Palette type id, or 'dc_box' for the group")
+    type: str = Field(
+        min_length=1, description="Palette type id, or 'dc_box' / 'ac_combiner' for a group"
+    )
     values: dict[str, Any] = Field(default_factory=dict)
     children: list[GraphNode] = Field(default_factory=list)
 
@@ -210,6 +234,10 @@ _PORTS: dict[str, frozenset[str]] = {
     "junction": frozenset({"W", "E", "N", "S"}),
     "terminal": frozenset({"L", "R"}),
     "pv_connector": frozenset({"IN", "OUT"}),
+    "microinverter": frozenset({*"ABCDEFGH", "AC"}),
+    "pv_module": frozenset({"POS", "NEG"}),
+    "ac_junction_box": frozenset({"IN", "OUT"}),
+    "ac_spd": frozenset({"L", "PE"}),
 }
 _THROUGH: dict[str, tuple[tuple[str, ...], ...]] = {
     "dc_fuse_holder": (("IN", "OUT"),),
@@ -221,6 +249,7 @@ _THROUGH: dict[str, tuple[tuple[str, ...], ...]] = {
     "pv_connector": (("IN", "OUT"),),
     "junction": (("W", "E", "N", "S"),),
     "load_centre": (("LEFT", "RIGHT"),),
+    "ac_junction_box": (("IN", "OUT"),),
 }
 """Ports a current passes through inside a node (the switch pairs INk-OUTk; SPDs, inverters,
 strings, the grid and electrodes end a path)."""
@@ -318,14 +347,15 @@ class _Builder:
             self.nodes[node.id] = node
             if group is not None:
                 self.group_of[node.id] = group
-            if node.type == GROUP_TYPE:
-                self.mapped[node.id] = "dc_bos"
+            if node.type in GROUP_CHILDREN:
+                if node.type == GROUP_TYPE:
+                    self.mapped[node.id] = "dc_bos"
+                box = "de protecciones CD" if node.type == GROUP_TYPE else "combinadora de CA"
                 for child in node.children:
-                    if child.type not in BOX_CHILD_TYPES:
+                    if child.type not in GROUP_CHILDREN[node.type]:
                         self.issue(
                             "topology",
-                            f"{child.id} ({child.type}) no va dentro de la caja de protecciones "
-                            "CD.",
+                            f"{child.id} ({child.type}) no va dentro de la caja {box}.",
                             child.id,
                             node.id,
                         )
@@ -359,7 +389,7 @@ class _Builder:
                         "unknown_node", f"El cable llega a «{node_id}», que no está.", node_id
                     )
                     bad = True
-                elif node.type == GROUP_TYPE:
+                elif node.type in GROUP_CHILDREN:
                     self.issue(
                         "unknown_port",
                         f"{end}: los cables se conectan a las piezas de la caja, no a la caja.",
@@ -391,7 +421,7 @@ class _Builder:
                         (f"{node_id}.{other}", None)
                     )
         for node_id, node in self.nodes.items():
-            if node.type != GROUP_TYPE and node_id not in used:
+            if node.type not in GROUP_CHILDREN and node_id not in used:
                 self.issue("disconnected", f"{node_id} no tiene ningún cable.", node_id)
         return _Net(self.nodes, adjacency)
 
@@ -620,10 +650,14 @@ def graph_to_spec(
     spec["dc_bos"] = {"combiners": [], "disconnects": disconnects, "spds": spds}
 
     # AC side
-    _ac_side(b, net, spec, utility, phases, tables)
+    on_micro_side = micro_breakers(b, net)
+    _ac_side(b, net, spec, utility, phases, tables, on_micro_side)
 
     # Circuits
     _circuits(b, spec, string_paths, catalogue_inverters, site, standards, phases, tables)
+
+    # Microinverters, their AC branches and the AC combiner box
+    _micro_side(b, net, spec, utility, phases, tables, standards, site, modules)
 
     # Ground electrodes
     electrodes = by_type.get("ground_electrode", [])
@@ -657,6 +691,7 @@ def _ac_side(
     utility: Utility | None,
     phases: int,
     tables: Any,
+    on_micro_side: set[str] | frozenset[str] = frozenset(),
 ) -> None:
     template_ac = b.template.get("ac_bos") or {}
     ac: dict[str, Any] = copy.deepcopy(dict(template_ac))
@@ -677,7 +712,7 @@ def _ac_side(
         return len(items) - 1
 
     breakers = {n.id: n for n in b.nodes.values() if n.type == "ac_breaker"}
-    inverter_breakers: list[str] = []
+    inverter_breakers: list[str] = list(on_micro_side)
     for node in (n for n in b.nodes.values() if n.type == "inverter"):
         order, _parent = net.trace(f"{node.id}.AC")
         hit = [p.split(".", 1)[0] for p in order if p.split(".", 1)[0] in breakers]
@@ -764,7 +799,7 @@ def _ac_side(
     for node in (n for n in b.nodes.values() if n.type == "grid"):
         b.mapped[node.id] = "utility"
     for breaker_id in breakers:
-        if breaker_id not in b.mapped:
+        if breaker_id not in b.mapped and breaker_id not in on_micro_side:
             b.issue(
                 "topology",
                 f"{breaker_id}: no está entre el inversor y el centro de carga ni entre el centro "
@@ -1021,6 +1056,620 @@ def _inverter_path(b: _Builder, inverter_id: str, itm_id: str) -> list[GraphCabl
     _order, parent = b.net_cache.trace(f"{inverter_id}.AC")
     end = next((f"{itm_id}.{p}" for p in ("IN", "OUT") if f"{itm_id}.{p}" in parent), None)
     return _path(parent, end) if end else []
+
+
+# --- Microinverters (schema 0.2.0, Stage 3.9.4) ---------------------------------------------
+
+
+def _bounded_trace(
+    net: _Net, start: str, stop_types: frozenset[str]
+) -> tuple[list[str], dict[str, tuple[str, GraphCable | None]]]:
+    """Like :meth:`_Net.trace`, but the path does not continue through nodes of ``stop_types``."""
+    seen = {start}
+    parent: dict[str, tuple[str, GraphCable | None]] = {}
+    queue = deque([start])
+    order = []
+    while queue:
+        port = queue.popleft()
+        order.append(port)
+        if port != start and net.node_of(port).type in stop_types:
+            continue
+        for nxt, cable in net.adjacency.get(port, []):
+            if nxt not in seen:
+                seen.add(nxt)
+                parent[nxt] = (port, cable)
+                queue.append(nxt)
+    return order, parent
+
+
+_MICRO_STOP = frozenset({"load_centre", "microinverter"})
+
+
+def micro_breakers(b: _Builder, net: _Net) -> set[str]:
+    """Every AC breaker on the microinverters' side of the load centre."""
+    found: set[str] = set()
+    for node in b.nodes.values():
+        if node.type != "microinverter":
+            continue
+        order, _parent = _bounded_trace(net, f"{node.id}.AC", _MICRO_STOP)
+        found |= {p.split(".", 1)[0] for p in order if net.node_of(p).type == "ac_breaker"}
+    return found
+
+
+@dataclass
+class _Unit:
+    node: GraphNode
+    model: Microinverter
+    breaker: str
+    path: list[GraphCable]
+    distance: float
+    inputs: dict[str, str] = field(default_factory=dict)
+
+
+def _micro_side(
+    b: _Builder,
+    net: _Net,
+    spec: dict[str, Any],
+    utility: Utility | None,
+    phases: int,
+    tables: Any,
+    standards: Standards,
+    site: Site | None,
+    modules: dict[str, tuple[str, CatalogueModule]],
+) -> None:
+    nodes = [n for n in b.nodes.values() if n.type == "microinverter"]
+    if not nodes:
+        for node in (n for n in b.nodes.values() if n.type == "pv_module"):
+            b.issue("topology", f"{node.id} no está conectado a ningún microinversor.", node.id)
+        return
+    spec["schema_version"] = MICRO_SCHEMA_VERSION
+    units: dict[str, _Unit] = {}
+    for node in nodes:
+        model = b.component(node, "model", Microinverter, "microinversor")
+        order, parent = _bounded_trace(net, f"{node.id}.AC", _MICRO_STOP)
+        hit = [p for p in order if net.node_of(p).type == "ac_breaker"]
+        if not hit:
+            b.issue(
+                "topology",
+                f"La salida de CA de {node.id} no llega a ningún interruptor (ITM de rama).",
+                node.id,
+            )
+            continue
+        if model is None:
+            continue
+        path = _path(parent, hit[0])
+        distance = sum(c.length_m or 0.0 for c in path)
+        units[node.id] = _Unit(node, model, hit[0].split(".", 1)[0], path, distance)
+
+    # The module on each input.
+    for node in (n for n in b.nodes.values() if n.type == "pv_module"):
+        found = b.component(node, "module", CatalogueModule, "módulo FV")
+        targets: set[str] = set()
+        for port in ("POS", "NEG"):
+            order, _parent = _bounded_trace(net, f"{node.id}.{port}", _MICRO_STOP)
+            targets |= {p for p in order if net.node_of(p).type == "microinverter"}
+        if not targets:
+            b.issue("topology", f"{node.id} no llega a ninguna entrada de microinversor.", node.id)
+            continue
+        if len(targets) > 1:
+            b.issue(
+                "topology",
+                f"{node.id} llega a varias entradas a la vez ({', '.join(sorted(targets))}); "
+                "cada módulo va a una sola entrada.",
+                node.id,
+            )
+            continue
+        unit_id, letter = next(iter(targets)).split(".", 1)
+        unit = units.get(unit_id)
+        if found is None or unit is None:
+            continue
+        if letter not in adapters.mppt_ids(unit.model):
+            b.issue(
+                "unknown_port",
+                f"{unit_id}.{letter}: el {unit.model.component_id} tiene "
+                f"{unit.model.mppt_count} entrada(s).",
+                unit_id,
+                node.id,
+            )
+            continue
+        if letter in unit.inputs:
+            b.issue(
+                "topology",
+                f"La entrada {unit_id}.{letter} recibe más de un módulo; cada entrada lleva uno.",
+                unit_id,
+                node.id,
+            )
+            continue
+        if found.component_id not in modules:
+            module_id = f"MOD{len(modules) + 1}"
+            modules[found.component_id] = (module_id, found)
+            spec.setdefault("modules", []).append(
+                {**adapters.to_spec_module(found).model_dump(mode="json"), "id": module_id}
+            )
+        unit.inputs[letter] = modules[found.component_id][0]
+        b.mapped[node.id] = "ac_branches"  # completed below with the unit's place
+
+    # One inverter entry per model.
+    models: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    for unit in units.values():
+        models.setdefault(unit.model.component_id, f"INVM{len(models) + 1}")
+        counts[unit.model.component_id] = counts.get(unit.model.component_id, 0) + 1
+    voltage = utility.nominal_voltage_v if utility else 220
+    for component_id, inverter_id in models.items():
+        model = next(u.model for u in units.values() if u.model.component_id == component_id)
+        spec["inverters"].append(
+            adapters.to_spec_microinverter(
+                model,
+                inverter_id=inverter_id,
+                qty=counts[component_id],
+                ac_voltage_v=voltage,
+                phases=phases,
+            ).model_dump(mode="json")
+        )
+
+    # The AC combiner box, if the branch breakers sit in one.
+    combiners = [n for n in b.nodes.values() if n.type == AC_GROUP_TYPE]
+    combiner = combiners[0] if combiners else None
+    if len(combiners) > 1:
+        b.issue(
+            "unsupported",
+            "Por ahora el motor calcula una sola caja combinadora de CA.",
+            *(n.id for n in combiners),
+        )
+
+    ac = spec["ac_bos"]
+    ocpds: list[dict[str, Any]] = ac["ocpds"]
+    fault = utility.available_fault_current_ka if utility else 0.0
+
+    def place_breaker(node: GraphNode, rating: float, reason: str, **derived: Any) -> int:
+        base = _template_item(ocpds, node.id)
+        entry = {**base, **node.values, "id": node.id, **derived}
+        index = next((i for i, o in enumerate(ocpds) if o.get("id") == node.id), len(ocpds))
+        if index == len(ocpds):
+            ocpds.append(entry)
+        else:
+            ocpds[index] = entry
+        entry.setdefault("poles", phases)
+        entry.setdefault("voltage_v", AC_BREAKER_VOLTAGE_V)
+        if "rating_a" not in entry:
+            choice, _found = bos.select_ac_breaker(
+                position=node.id,
+                rating_a=rating,
+                poles=entry["poles"],
+                voltage_v=AC_BREAKER_VOLTAGE_V,
+                fault_ka=fault,
+                breakers=b.registry.ac_breakers(),
+            )
+            entry["rating_a"] = b.fill(
+                f"ac_bos.ocpds[{index}].rating_a", choice.rating_a if choice else rating, reason
+            )
+            if choice is not None and "model" not in entry:
+                entry["model"] = b.fill(
+                    f"ac_bos.ocpds[{index}].model", choice.device_id, "Interruptor del catálogo."
+                )
+            if "kaic_ka" not in entry:
+                entry["kaic_ka"] = b.fill(
+                    f"ac_bos.ocpds[{index}].kaic_ka",
+                    choice.interrupting_ka if choice else fault,
+                    "Capacidad interruptiva del interruptor del catálogo.",
+                )
+        b.mapped[node.id] = f"ac_bos.ocpds[{index}]"
+        return index
+
+    def panel_of(breaker_id: str) -> str | None:
+        for port in ("OUT", "IN"):
+            order, _parent = _bounded_trace(net, f"{breaker_id}.{port}", frozenset({"load_centre"}))
+            panels = [p.split(".", 1)[0] for p in order if net.node_of(p).type == "load_centre"]
+            if panels:
+                return panels[0]
+        return None
+
+    # Branches: one per branch breaker, in the order of the breaker ids.
+    by_breaker: dict[str, list[_Unit]] = {}
+    for unit in units.values():
+        by_breaker.setdefault(unit.breaker, []).append(unit)
+    branches: list[dict[str, Any]] = []
+    circuits: list[dict[str, Any]] = spec["circuits"]
+    total_current = 0.0
+    first_panel: str | None = None
+    for number, breaker_id in enumerate(sorted(by_breaker), start=1):
+        members = sorted(by_breaker[breaker_id], key=lambda u: (u.distance, len(u.path)))
+        branch_id = f"R{number}"
+        model_ids = {u.model.component_id for u in members}
+        if len(model_ids) > 1:
+            b.issue(
+                "unsupported",
+                f"La rama {branch_id} mezcla modelos de microinversor ({', '.join(model_ids)}).",
+                *(u.node.id for u in members),
+            )
+        lead = members[0]
+        limits = micro_limits_of(lead.model)
+        breaker = b.nodes[breaker_id]
+        in_combiner = combiner is not None and b.group_of.get(breaker_id) == combiner.id
+
+        # Home run: from the junction box (or the first unit's tap) to the breaker.
+        boxes = [
+            index
+            for index, cable in enumerate(lead.path)
+            if any(
+                b.nodes[end.split(".", 1)[0]].type == "ac_junction_box"
+                for end in (cable.from_, cable.to)
+            )
+        ]
+        start = boxes[-1] + 1 if boxes else 1
+        home = lead.path[start:] if len(lead.path) > start else lead.path[-1:]
+        home_ids = {id(c) for c in home}
+        trunk = [c for u in members for c in u.path if id(c) not in home_ids]
+
+        drawn = sorted({c.size for c in trunk if c.size}, key=_awg_rank)
+        if len(drawn) > 1:
+            b.issue(
+                "conflict",
+                f"El troncal de {branch_id} trae calibres distintos ({', '.join(drawn)}); se usa "
+                f"el mayor, {drawn[-1]}.",
+                *(u.node.id for u in members),
+            )
+        if drawn:
+            trunk_size = drawn[-1]
+        else:
+            allowed = sorted(limits.trunk_max_ocpd_a, key=_awg_rank) or ["12 AWG", "10 AWG"]
+            fits = [
+                size
+                for size in allowed
+                if micro_rules.branch_limit(limits, size, tables).units >= len(members)
+            ]
+            trunk_size = b.fill(
+                f"ac_branches[{len(branches)}].trunk_size",
+                fits[0] if fits else allowed[-1],
+                "Calibre de troncal más chico del fabricante que admite los microinversores de "
+                "la rama (NOM y tabla del fabricante).",
+            )
+
+        known = all(c.length_m is not None for u in members for c in u.path)
+        if len(members) > 1 and known:
+            spacing = round((members[-1].distance - members[0].distance) / (len(members) - 1), 2)
+        else:
+            spacing = 0.0
+        if spacing <= 0:
+            spacing = b.fill(
+                f"ac_branches[{len(branches)}].spacing_m",
+                round(MICRO_SPACING_PER_INPUT_M * lead.model.mppt_count, 2),
+                f"Separación por omisión entre microinversores ({MICRO_SPACING_PER_INPUT_M:g} m "
+                "por módulo conectado).",
+            )
+
+        units_current = len(members) * lead.model.max_ac_output_current_a
+        total_current += units_current
+        if in_combiner:
+            assert combiner is not None
+            place_breaker(
+                breaker,
+                micro_rules.branch_ocpd_a(limits, len(members), tables),
+                "ITM de rama: 1.25 × suma de corrientes, siguiente valor normalizado.",
+                role="other",
+                backfed=False,
+                at=combiner.id,
+            )
+        else:
+            panel = panel_of(breaker_id)
+            if panel is None:
+                b.issue("topology", f"{breaker_id} no llega a ningún centro de carga.", breaker_id)
+            first_panel = first_panel or panel
+            place_breaker(
+                breaker,
+                micro_rules.branch_ocpd_a(limits, len(members), tables),
+                "ITM de rama: 1.25 × suma de corrientes, siguiente valor normalizado.",
+                role="I1",
+                backfed=True,
+                **({"at": panel} if panel else {}),
+            )
+
+        branch = {
+            "id": branch_id,
+            "trunk_size": trunk_size,
+            "spacing_m": spacing,
+            "ocpd": breaker_id,
+            "microinverters": [
+                {"id": u.node.id, "inverter": models[u.model.component_id], "inputs": u.inputs}
+                for u in members
+            ],
+        }
+        for position, unit in enumerate(members):
+            b.mapped[unit.node.id] = f"ac_branches[{len(branches)}].microinverters[{position}]"
+            for module_node in b.nodes.values():
+                if b.mapped.get(module_node.id) == "ac_branches" and _feeds(
+                    net, module_node.id, unit.node.id
+                ):
+                    b.mapped[module_node.id] = (
+                        f"ac_branches[{len(branches)}].microinverters[{position}].inputs"
+                    )
+            if not unit.inputs:
+                b.issue(
+                    "topology", f"{unit.node.id} no tiene ningún módulo conectado.", unit.node.id
+                )
+        branches.append(branch)
+
+        # Circuit C-R<n>: the home run.
+        circuits.append(
+            _home_run(
+                b,
+                circuits,
+                circuit_id=f"C-{branch_id}",
+                source=branch_id,
+                target=breaker_id,
+                cables=home,
+                current=units_current,
+                ocpd_a=next(o for o in ocpds if o["id"] == breaker_id).get("rating_a"),
+                drop=functools.partial(
+                    _branch_drop,
+                    trunk_size=trunk_size,
+                    spacing_m=spacing,
+                    units=len(members),
+                    unit_current_a=lead.model.max_ac_output_current_a,
+                    voltage_v=voltage,
+                    tables=tables,
+                ),
+                phases=phases,
+                standards=standards,
+                site=site,
+                tables=tables,
+            )
+        )
+    spec["ac_branches"] = branches
+
+    poc = ac["point_of_connection"]
+    if combiner is not None:
+        b.mapped[combiner.id] = "ac_combiner"
+        _combiner(
+            b,
+            net,
+            spec,
+            combiner,
+            total_current,
+            place_breaker,
+            panel_of,
+            units,
+            phases,
+            standards,
+            site,
+            tables,
+            voltage,
+        )
+    elif branches:
+        poc.update({"breaker": branches[0]["ocpd"]})
+        if first_panel:
+            poc["panel"] = first_panel
+        poc.setdefault("id", "PI-1")
+        poc.setdefault("type", "load_side")
+    for node in (n for n in b.nodes.values() if n.type == "ac_junction_box"):
+        b.mapped.setdefault(node.id, "wiring")
+
+
+def _feeds(net: _Net, module_id: str, unit_id: str) -> bool:
+    for port in ("POS", "NEG"):
+        order, _parent = _bounded_trace(net, f"{module_id}.{port}", _MICRO_STOP)
+        if any(p.split(".", 1)[0] == unit_id for p in order):
+            return True
+    return False
+
+
+def _awg_rank(size: str) -> float:
+    """Sort key from the smallest conductor to the largest (14 AWG ... 4/0 AWG)."""
+    gauge = size.split(" ", 1)[0]
+    if "/" in gauge:
+        return 100 + int(gauge.split("/", 1)[0])
+    return -float(gauge)
+
+
+def _combiner(
+    b: _Builder,
+    net: _Net,
+    spec: dict[str, Any],
+    combiner: GraphNode,
+    total_current: float,
+    place_breaker: Any,
+    panel_of: Any,
+    units: Mapping[str, _Unit],
+    phases: int,
+    standards: Standards,
+    site: Site | None,
+    tables: Any,
+    voltage: float,
+) -> None:
+    ac = spec["ac_bos"]
+    children = {c.id for c in combiner.children}
+    # The main breaker: the first breaker outside the box on the way to the load centre.
+    main: str | None = None
+    main_path: list[GraphCable] = []
+    for unit in units.values():
+        order, parent = _bounded_trace(net, f"{unit.node.id}.AC", _MICRO_STOP)
+        outside = [
+            p
+            for p in order
+            if net.node_of(p).type == "ac_breaker" and p.split(".", 1)[0] not in children
+        ]
+        if outside:
+            main = outside[0].split(".", 1)[0]
+            main_path = [
+                c
+                for c in _path(parent, outside[0])
+                if not all(end.split(".", 1)[0] in children for end in (c.from_, c.to))
+                and c not in unit.path
+            ]
+            break
+    if main is None:
+        b.issue(
+            "topology",
+            f"La caja combinadora {combiner.id} no llega a ningún ITM general hacia el centro de "
+            "carga.",
+            combiner.id,
+        )
+        return
+    panel = panel_of(main)
+    index = place_breaker(
+        b.nodes[main],
+        calc.next_standard_ocpd_a(calc.ocpd_min_a(total_current), tables),
+        "ITM general de la caja combinadora: 1.25 × suma de todas las ramas, siguiente valor "
+        "normalizado.",
+        role="I1",
+        backfed=True,
+        **({"at": panel} if panel else {}),
+    )
+    spds = [c for c in combiner.children if c.type == "ac_spd"]
+    for spd in spds:
+        b.mapped[spd.id] = f"ac_bos.spds[{len(ac['spds'])}]"
+        ac["spds"].append({**spd.values, "id": spd.id, "at": combiner.id})
+    spec["ac_combiner"] = {
+        "id": combiner.id,
+        "main_ocpd": main,
+        "spd": spds[0].id if spds else None,
+    }
+    poc = ac["point_of_connection"]
+    poc.update({"breaker": main})
+    if panel:
+        poc["panel"] = panel
+    poc.setdefault("id", "PI-1")
+    poc.setdefault("type", "load_side")
+    for child in combiner.children:
+        if child.type in WIRING_TYPES:
+            b.mapped.setdefault(child.id, "wiring")
+    spec["circuits"].append(
+        _home_run(
+            b,
+            spec["circuits"],
+            circuit_id="C-CCA",
+            source=combiner.id,
+            target=main,
+            cables=main_path,
+            current=total_current,
+            ocpd_a=ac["ocpds"][index].get("rating_a"),
+            drop=lambda size, run: calc.voltage_drop_ac_pct(
+                size, run, total_current, voltage, 2, tables
+            ),
+            phases=phases,
+            standards=standards,
+            site=site,
+            tables=tables,
+        )
+    )
+
+
+def _branch_drop(
+    size: str,
+    run: float,
+    *,
+    trunk_size: str,
+    spacing_m: float,
+    units: int,
+    unit_current_a: float,
+    voltage_v: float,
+    tables: Any,
+) -> float:
+    return calc.voltage_drop_trunk_pct(
+        size,
+        trunk_size,
+        home_run_m=run,
+        spacing_m=spacing_m,
+        units=units,
+        unit_current_a=unit_current_a,
+        voltage_v=voltage_v,
+        tables=tables,
+    )
+
+
+def _home_run(
+    b: _Builder,
+    spec_circuits: list[dict[str, Any]],
+    *,
+    circuit_id: str,
+    source: str,
+    target: str,
+    cables: list[GraphCable],
+    current: float,
+    ocpd_a: float | None,
+    drop: Any,
+    phases: int,
+    standards: Standards,
+    site: Site | None,
+    tables: Any,
+) -> dict[str, Any]:
+    """An AC circuit of a microinverter design (branch home run or combiner output)."""
+    index = len(spec_circuits)
+    lengths = [c.length_m for c in cables if c.length_m is not None]
+    path = f"circuits[{index}]"
+    length = (
+        sum(lengths)
+        if lengths
+        else b.fill(
+            f"{path}.length_m", DEFAULTS.ac_output_length_m, "Longitud por omisión del motor."
+        )
+    )
+    ambient = max((c.ambient_c for c in cables if c.ambient_c is not None), default=None)
+    size = next((c.size for c in cables if c.size), None)
+    ccc = 2
+    if size is None and site is not None:
+        choice, _issues = bos.size_conductor(
+            circuit_id=circuit_id,
+            kind="inverter_output",
+            i_max_a=current,
+            ocpd_a=ocpd_a,
+            current_carrying=ccc,
+            ambient_c=ambient if ambient is not None else site.t_amb_max_c,
+            clearance_mm=None,
+            length_m=length,
+            drop_pct=lambda s, run=length: drop(s, run),
+            drop_limit_pct=standards.vd_limits_pct.ac,
+            drop_rule="VD-002",
+            tables=tables,
+        )
+        if choice is not None:
+            size = b.fill(
+                f"{path}.conductors.size",
+                choice.size,
+                "Calibre más chico que cumple ampacidad, protección y caída de tensión.",
+            )
+    size = size or "10 AWG"
+    circuit: dict[str, Any] = {
+        "id": circuit_id,
+        "kind": "inverter_output",
+        "from": source,
+        "to": target,
+        "conductors": {
+            "qty": phases,
+            "size": size,
+            "material": "Cu",
+            "insulation": bos.AC_INSULATION,
+        },
+        "egc": {"size": size, "type": bos.EGC_TYPE},
+        "raceway": {"type": "EMT", "ccc_count": ccc},
+        "length_m": length,
+    }
+    if ambient is not None:
+        circuit["ambient_c"] = ambient
+    drawn = sorted({c.raceway_trade_size_mm for c in cables if c.raceway_trade_size_mm is not None})
+    if drawn:
+        circuit["raceway"]["trade_size_mm"] = drawn[-1]
+    else:
+        raceway, _issues = bos.size_raceway(
+            circuit_id=circuit_id,
+            conductors=phases + 1,
+            conductor_area_mm2=calc.insulated_area_mm2(size, bos.AC_INSULATION, None, tables),
+            egc_size=size,
+            given_trade_size_mm=None,
+            insulation=bos.AC_INSULATION,
+            tables=tables,
+        )
+        if raceway.trade_size_mm is not None:
+            circuit["raceway"]["trade_size_mm"] = b.fill(
+                f"{path}.raceway.trade_size_mm",
+                raceway.trade_size_mm,
+                "EMT más chico que aloja los conductores (Capítulo 10, Tabla 1).",
+            )
+    b.circuit_cables.append(
+        CircuitCables(circuit_id, "inverter_output", source, target, b.indices(cables))
+    )
+    return circuit
 
 
 __all__ = [

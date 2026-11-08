@@ -918,10 +918,18 @@ output circuit to the main breaker at the load centre. MIC-020 main breaker >= 1
 every unit (690-8(b)); MIC-021 warning without an AC SPD; VD-002 on the combiner output;
 `evaluate_choices` checks the main breaker. Owner asked for it in 0.8.0 (2026-11-07).
 **Tests**: tests/test_micro_spec.py (combiner section).
-**Status**: In Progress
+**Status**: Complete (PR #72)
 
 ##### Stage 3.9.4: pvsld.graph micro nodes, palette, capabilities; editor notified
-**Status**: Not Started
+**Goal**: generated symbols `PVSLD_MICROINV_<n>IN` (inputs A.. on top, AC below) and
+`PVSLD_AC_JBOX` (no library regeneration); palette types `microinverter` (symbol variants, the
+equipment entry names its block), `pv_module`, `ac_junction_box`, `ac_spd`, branch breaker naming
+`ITM-R{n}`, derived names R{n}/C-R{n}/C-CCA/INVM{n}; `graph_to_spec` maps micro drawings: module
+per input, branches by breaker, unit order along the trunk, home run from the junction box,
+trunk size and spacing (drawn or default 1.2 m per module), branch / combiner breakers, the
+`ac_combiner` group node. The editor is notified with the 0.8.0 release.
+**Tests**: tests/test_graph_micro.py, tests/test_micro_symbols.py, palette tests.
+**Status**: In Progress
 
 ##### Stage 3.9.5: release 0.8.0
 **Status**: Not Started

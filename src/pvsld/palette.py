@@ -36,6 +36,7 @@ from pvsld.core import model as spec_model
 from pvsld.resources import data_path
 from pvsld.sizing.bos import STRING_OCPD_POLES_BY_DC_SYSTEM
 from pvsld.symbols.cfe import get_symbol
+from pvsld.symbols.cfe.definitions import microinverter_name
 from pvsld.symbols.cfe.model import (
     LIBRARY_VERSION,
     Arc,
@@ -284,6 +285,11 @@ class TypeDescriptor(BaseModel):
         "pvsld.sizing.bos.string_ocpd_poles)",
     )
     symbol: SymbolModel
+    symbol_variants: tuple[SymbolModel, ...] = Field(
+        default=(),
+        description="Other forms of the symbol (a microinverter by its number of inputs); "
+        "an equipment entry names the one it uses in 'block'",
+    )
     fingerprint: str = Field(description="SHA-256 of this descriptor without the fingerprint")
 
 
@@ -316,6 +322,11 @@ class EquipmentEntry(BaseModel):
     not_designable_es: str | None = Field(
         default=None, description="Why the engine cannot design with it yet, in Spanish"
     )
+    block: str | None = Field(
+        default=None,
+        description="Symbol block of this model when it is not the type's own (a microinverter's "
+        "variant by inputs, from the type's symbol_variants)",
+    )
 
 
 class Palette(BaseModel):
@@ -324,7 +335,9 @@ class Palette(BaseModel):
     model_config = _STRICT
     format: Literal["pvsld.palette/1"] = FORMAT
     library_version: str
-    schema_version: str = Field(description="Version of the parameter specification")
+    schema_version: str = Field(
+        description="Newest version of the parameter specification the types can build"
+    )
     types: tuple[TypeDescriptor, ...]
     equipment: tuple[EquipmentEntry, ...]
     derived_names: tuple[DerivedName, ...] = Field(
@@ -359,6 +372,7 @@ class _TypeDef:
         naming: tuple[NamingRule, ...] = (),
         derived_fields: tuple[str, ...] = (),
         poles_by_dc_system: dict[str, int] | None = None,
+        variants: tuple[str, ...] = (),
     ) -> None:
         self.type_id = type_id
         self.label_es = label_es
@@ -370,6 +384,7 @@ class _TypeDef:
         self.naming = naming
         self.derived_fields = derived_fields
         self.poles_by_dc_system = poles_by_dc_system
+        self.variants = variants
 
 
 def _rule(pattern: str, description_es: str, context: str = "default") -> NamingRule:
@@ -390,6 +405,14 @@ TYPES: tuple[_TypeDef, ...] = (
         derived_fields=("inverter", "mppt"),
     ),
     _TypeDef(
+        "pv_module",
+        "Módulo fotovoltaico (en la entrada de un microinversor)",
+        "PVSLD_PV_MODULE",
+        component_types=("pv_module",),
+        spec_section="ac_branches[].microinverters[].inputs",
+        naming=(_rule("M{n}", "M1, M2... (un módulo por entrada del microinversor)"),),
+    ),
+    _TypeDef(
         "inverter",
         "Inversor",
         "PVSLD_INV",
@@ -397,6 +420,23 @@ TYPES: tuple[_TypeDef, ...] = (
         spec_section="inverters[]",
         spec_model_name="Inverter",
         naming=(_rule("INV{n}", "INV1, INV2..."),),
+    ),
+    _TypeDef(
+        "microinverter",
+        "Microinversor",
+        microinverter_name(4),
+        component_types=("microinverter",),
+        spec_section="ac_branches[].microinverters[]",
+        spec_model_name="BranchMicro",
+        naming=(_rule("MI{n}", "MI1, MI2... (en el orden del cable troncal)"),),
+        derived_fields=("inverter", "inputs"),
+        variants=tuple(microinverter_name(n) for n in (1, 2, 4)),
+    ),
+    _TypeDef(
+        "ac_junction_box",
+        "Caja de conexiones de CA (fin del troncal)",
+        "PVSLD_AC_JBOX",
+        naming=(_rule("JB-{n}", "JB-1, JB-2... (una por rama)"),),
     ),
     _TypeDef(
         "dc_fuse_holder",
@@ -464,10 +504,23 @@ TYPES: tuple[_TypeDef, ...] = (
         spec_section="ac_bos.ocpds[]",
         spec_model_name="Ocpd",
         naming=(
-            _rule("ITM-{n}", "ITM-1 (salida del inversor), ITM-2..."),
+            _rule(
+                "ITM-{n}",
+                "ITM-1 (salida del inversor o ITM general de la caja combinadora de CA), ITM-2...",
+            ),
+            _rule("ITM-R{n}", "ITM de la rama de microinversores R<n>", "micro_branch"),
             _rule("ITM-P", "Interruptor principal del servicio", "service_main"),
         ),
         derived_fields=("role", "backfed", "at"),
+    ),
+    _TypeDef(
+        "ac_spd",
+        "Protección contra sobretensiones de CA",
+        "PVSLD_SPD_AC",
+        spec_section="ac_bos.spds[]",
+        spec_model_name="Spd",
+        naming=(_rule("DPS-CA{n}", "DPS-CA1 (caja combinadora de CA o centro de carga)"),),
+        derived_fields=("at",),
     ),
     _TypeDef(
         "interconnection_point",
@@ -559,6 +612,26 @@ DERIVED_NAMES: tuple[DerivedName, ...] = (
         description_es="Desconectador de CD integrado en el inversor",
     ),
     DerivedName(
+        pattern="R{n}",
+        spec_section="ac_branches[]",
+        description_es="Rama de CA de microinversores, una por ITM de rama (en orden de sus ITM)",
+    ),
+    DerivedName(
+        pattern="C-R{n}",
+        spec_section="circuits[]",
+        description_es="Circuito del ITM de la rama R<n> al primer microinversor (mismo número)",
+    ),
+    DerivedName(
+        pattern="C-CCA",
+        spec_section="circuits[]",
+        description_es="Circuito de la caja combinadora de CA a su ITM general",
+    ),
+    DerivedName(
+        pattern="INVM{n}",
+        spec_section="inverters[]",
+        description_es="Cada modelo de microinversor distinto (tipo micro, cantidad = unidades)",
+    ),
+    DerivedName(
         pattern="MOD{n}",
         spec_section="modules[]",
         description_es="Cada modelo de módulo distinto que usan las cadenas",
@@ -586,7 +659,12 @@ def next_id(pattern: str, taken: Iterable[str], *, string_id: str | None = None)
     return pattern.replace("{n}", str(number))
 
 
-_BY_COMPONENT_TYPE = {ct: t.type_id for t in TYPES for ct in t.component_types}
+_BY_COMPONENT_TYPE: dict[str, str] = {}
+for _definition in TYPES:
+    for _component_type in _definition.component_types:
+        # A component type fills its first type (a PV module: the string; the module on a
+        # microinverter input takes the same equipment).
+        _BY_COMPONENT_TYPE.setdefault(_component_type, _definition.type_id)
 
 
 # --- Conversion ----------------------------------------------------------------------------------
@@ -684,6 +762,9 @@ def _type_descriptor(definition: _TypeDef) -> TypeDescriptor:
         "derived_fields": definition.derived_fields,
         "poles_by_dc_system": definition.poles_by_dc_system,
         "symbol": _symbol_model(get_symbol(definition.block), add_anchors=True),
+        "symbol_variants": tuple(
+            _symbol_model(get_symbol(name), add_anchors=False) for name in definition.variants
+        ),
     }
     draft = TypeDescriptor.model_construct(**fields, fingerprint="")
     return TypeDescriptor(
@@ -721,6 +802,9 @@ def _equipment(components: Iterable[Component]) -> tuple[EquipmentEntry, ...]:
                 ),
                 designable=blocked is None,
                 not_designable_es=blocked,
+                block=microinverter_name(component.mppt_count)
+                if component.component_type == "microinverter"
+                else None,
             )
         )
     return tuple(sorted(entries, key=lambda e: (e.type_id, e.component_id)))
@@ -732,7 +816,7 @@ def build_palette(registry: ComponentRegistry | None = None) -> Palette:
         registry = ComponentRegistry.load(data_path("datasheets/records"))
     fields: dict[str, Any] = {
         "library_version": LIBRARY_VERSION,
-        "schema_version": spec_model.SCHEMA_VERSION,
+        "schema_version": spec_model.MICRO_SCHEMA_VERSION,
         "types": tuple(_type_descriptor(definition) for definition in TYPES),
         "equipment": _equipment(registry),
         "derived_names": DERIVED_NAMES,
