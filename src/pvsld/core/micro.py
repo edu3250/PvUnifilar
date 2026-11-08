@@ -86,9 +86,15 @@ class MicroLimits:
     ac_voltage_range_v: tuple[float, float]
     max_ac_output_current_a: float
     trunk_max_ocpd_a: Mapping[str, float] = field(default_factory=dict)
-    """Trunk cable sizes the manufacturer allows and the largest breaker on each."""
+    """Largest breaker the manufacturer allows on a trunk size, when the datasheet gives one."""
     max_units_per_trunk: Mapping[str, int] = field(default_factory=dict)
     max_drop_cable_length_m: Mapping[str, float] = field(default_factory=dict)
+    trunk_sizes: tuple[str, ...] = ()
+    """Trunk cable sizes the manufacturer allows (empty: the keys of ``trunk_max_ocpd_a``)."""
+
+    @property
+    def allowed_trunk_sizes(self) -> tuple[str, ...]:
+        return self.trunk_sizes or tuple(self.trunk_max_ocpd_a)
 
 
 def limits_from_spec(inverter: Inverter) -> MicroLimits:
@@ -107,6 +113,7 @@ def limits_from_spec(inverter: Inverter) -> MicroLimits:
         ac_voltage_range_v=data.ac_voltage_range_v,
         max_ac_output_current_a=inverter.iac_max_a,
         trunk_max_ocpd_a=dict(data.trunk_max_ocpd_a),
+        trunk_sizes=tuple(data.trunk_sizes),
         max_units_per_trunk=dict(data.max_units_per_trunk),
         max_drop_cable_length_m=dict(data.max_drop_cable_length_m),
     )
@@ -286,8 +293,9 @@ def branch_findings(
 ) -> list[MicroFinding]:
     """MIC-011 to MIC-013 for one AC branch (``ocpd_a`` None = the engine picks the breaker)."""
     found: list[MicroFinding] = []
-    if micro.trunk_max_ocpd_a and trunk_size not in micro.trunk_max_ocpd_a:
-        allowed = ", ".join(micro.trunk_max_ocpd_a)
+    sizes = micro.allowed_trunk_sizes
+    if sizes and trunk_size not in sizes:
+        allowed = ", ".join(sizes)
         found.append(
             MicroFinding(
                 "MIC-013",

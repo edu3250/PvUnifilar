@@ -14,6 +14,11 @@ in the installation manual (Growatt NEO M-X2, section 4.4):
   The engine computes the voltage drop with the real length and uses this as a cap.
 
 Conductor sizes are written as in the rest of the engine (``"12 AWG"``).
+
+Owner criteria for datasheets (2026-11-08): a missing real power is the apparent power when the
+default power factor is at least 0.99 (noted in the record); a missing largest breaker is left out
+(the NOM 240-4(d) limit then applies alone); caps that change with the AC voltage keep the 220 V
+column (the 2F-3H service in Mexico).
 """
 
 from __future__ import annotations
@@ -55,8 +60,10 @@ class TrunkCable(Strict):
     """One AC trunk cable size the manufacturer allows and its largest branch breaker."""
 
     size: ConductorSize
-    max_ocpd_a: PositiveFloat = Field(
-        description="Largest branch breaker the manufacturer allows on this cable"
+    max_ocpd_a: PositiveFloat | None = Field(
+        default=None,
+        description="Largest branch breaker the manufacturer allows on this cable; omitted when "
+        "the datasheet gives none",
     )
 
 
@@ -73,6 +80,10 @@ class MicroinverterVariant(Strict):
         description="Continuous output current: the 690-8(a)(3) maximum circuit current"
     )
     max_efficiency_pct: Percent
+    max_input_current_per_mppt_a: PositiveFloat | None = Field(
+        default=None,
+        description="Per-model value when it differs by model; omit it when the family defines it",
+    )
     max_units_per_trunk: dict[ConductorSize, PositiveInt] = Field(
         min_length=1, description="Manufacturer cap of units per AC branch, by trunk cable size"
     )
@@ -99,11 +110,15 @@ class MicroinverterSpec(Strict):
     mppt_count: PositiveInt = Field(description="DC inputs (one MPPT each)")
     inputs_per_mppt: Literal[1] = Field(description="One PV module per input")
     max_input_voltage_v: PositiveFloat
-    startup_voltage_v: PositiveFloat
+    startup_voltage_v: PositiveFloat | None = Field(
+        default=None, description="Omitted when the datasheet does not print it"
+    )
     operating_input_voltage_range_v: AscendingRange | None = None
     mppt_voltage_range_v: AscendingRange
-    max_input_current_per_mppt_a: PositiveFloat = Field(
-        description="Operating limit: module current above it is clipped"
+    max_input_current_per_mppt_a: PositiveFloat | None = Field(
+        default=None,
+        description="Operating limit (module current above it is clipped); omit it when it "
+        "differs by model and set it on each variant",
     )
     max_short_circuit_current_per_mppt_a: PositiveFloat = Field(
         description="Hard limit for the module Isc on each input"
@@ -139,9 +154,10 @@ class MicroinverterSpec(Strict):
     @model_validator(mode="after")
     def _plausible_shared(self) -> MicroinverterSpec:
         problems: list[str] = []
-        if self.max_input_current_per_mppt_a > self.max_short_circuit_current_per_mppt_a:
+        current = self.max_input_current_per_mppt_a
+        if current is not None and current > self.max_short_circuit_current_per_mppt_a:
             problems.append(
-                f"max_input_current_per_mppt_a ({self.max_input_current_per_mppt_a:g}) exceeds "
+                f"max_input_current_per_mppt_a ({current:g}) exceeds "
                 f"max_short_circuit_current_per_mppt_a "
                 f"({self.max_short_circuit_current_per_mppt_a:g})"
             )
@@ -151,7 +167,7 @@ class MicroinverterSpec(Strict):
                 f"mppt_voltage_range_v upper limit ({high:g}) exceeds max_input_voltage_v "
                 f"({self.max_input_voltage_v:g})"
             )
-        if self.startup_voltage_v > high:
+        if self.startup_voltage_v is not None and self.startup_voltage_v > high:
             problems.append(
                 f"startup_voltage_v ({self.startup_voltage_v:g}) is above the MPPT window "
                 f"upper limit ({high:g})"
@@ -188,6 +204,20 @@ class MicroinverterFamily(MicroinverterSpec):
         reference = self.max_ac_current_reference_voltage_v
         for variant in self.variants:
             who = f"variant {variant.component_id}"
+            levels = [self.max_input_current_per_mppt_a, variant.max_input_current_per_mppt_a]
+            if all(level is None for level in levels) or None not in levels:
+                problems.append(
+                    f"{who}: max_input_current_per_mppt_a must be defined at exactly one level "
+                    "(family or variant)"
+                )
+            elif (
+                variant.max_input_current_per_mppt_a is not None
+                and variant.max_input_current_per_mppt_a > self.max_short_circuit_current_per_mppt_a
+            ):
+                problems.append(
+                    f"{who}: max_input_current_per_mppt_a exceeds "
+                    "max_short_circuit_current_per_mppt_a"
+                )
             unknown = sorted(set(variant.max_units_per_trunk) - sizes)
             missing = sorted(sizes - set(variant.max_units_per_trunk))
             if unknown:
@@ -211,16 +241,22 @@ class MicroinverterFamily(MicroinverterSpec):
     def expand(self) -> list[Microinverter]:
         """One standalone ``Microinverter`` per variant (family values, variant values on top)."""
         shared = {name: getattr(self, name) for name in MicroinverterSpec.model_fields}
-        return [
-            Microinverter(
-                component_type=self.component_type,
-                family_id=self.family_id,
-                source=self.source,
-                **shared,
-                **{name: getattr(variant, name) for name in MicroinverterVariant.model_fields},
+        expanded = []
+        for variant in self.variants:
+            values = {**shared}
+            for name in MicroinverterVariant.model_fields:
+                value = getattr(variant, name)
+                if value is not None or name not in values:
+                    values[name] = value
+            expanded.append(
+                Microinverter(
+                    component_type=self.component_type,
+                    family_id=self.family_id,
+                    source=self.source,
+                    **values,
+                )
             )
-            for variant in self.variants
-        ]
+        return expanded
 
 
 class Microinverter(MicroinverterSpec, MicroinverterVariant):
@@ -229,6 +265,7 @@ class Microinverter(MicroinverterSpec, MicroinverterVariant):
     component_type: Literal["microinverter"]
     family_id: ComponentId
     source: Provenance
+    max_input_current_per_mppt_a: PositiveFloat  # resolved: never None here
 
     @property
     def reviewed(self) -> bool:

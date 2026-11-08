@@ -932,7 +932,64 @@ trunk size and spacing (drawn or default 1.2 m per module), branch / combiner br
 **Status**: Complete (PR #73)
 
 ##### Stage 3.9.5: release 0.8.0
-**Status**: In Progress
+**Status**: Complete (v0.8.0, 2026-11-07)
+
+#### Stage 3.10: Plugin on par with the editor for microinverters (v0.9.0)
+Owner 2026-11-07: the plugin must match the editor, since a native chatbot in the editor will
+reuse the engine. Decisions: micros only when the user asks or names one; the smallest model whose
+recommended range holds the module power; fewest branches (10 AWG when needed), units spread
+evenly; AC combiner only on request; the sheet draws every module, up to 8 micros in 3 branches;
+free inputs on the last unit with a warning; also draw the per-string DC box.
+
+##### Stage 3.10.1: microinverter sizing
+**Goal**: `size_pv_system` with `microinverters` (ids or "auto") and `ac_combiner`:
+`pvsld.sizing.micro_sizing` picks the model, units, branches, trunks, breakers and home runs and
+validates the 0.2.0 spec; `MicroCandidate` in the result; MCP and CLI texts describe branches.
+**Tests**: tests/test_micro_sizing.py.
+**Status**: Complete (PR #75)
+
+##### Stage 3.10.2: spec -> editor graph (round trip with graph_to_spec)
+**Goal**: `pvsld.graph_export.spec_to_graph(spec)` gives the `pvsld.graph/1` drawing (spec ids,
+catalogue references recovered from manufacturer and model, circuit data on the first cable of
+each path) and the template of the undrawn sections; `graph_to_spec` gives the same design back
+for string inverters (shared and per-string DC box), microinverters and the AC combiner.
+**Tests**: tests/test_graph_export.py.
+**Status**: Complete (PR #76)
+
+##### Stage 3.10.3: memoria, BOM and project sheet data with micros
+**Goal**: `pvsld.report.memoria_micro.build_micro_memoria` (module on each input, each branch:
+current, breaker, trunk limit, manufacturer cap, home-run ampacity, daisy-chain drop in closed
+form, kAIC; combiner main; 120 % busbar), the BOM with modules on micro inputs, units, trunk cable,
+junction boxes and combiner; the project sheet no longer fails on a micro design (its micro rows
+come with the pro mode, 3.10.5).
+**Tests**: tests/test_micro_report.py (every Excel formula re-evaluated against the Python value).
+**Status**: Complete (PR #77)
+
+##### Stage 3.10.4: A3 sheet drawing with micros (per-string DC box drawing: separate PR)
+**Goal**: `pvsld.core.layout_micro.build_micro_schematic` on the a3_plantilla_v1 sheet (owner
+approval of the mock-up, 2026-11-08): a row per branch (a one-module string on each used input,
+units on the trunk with junction dots, junction box, home run to the branch breaker), branch
+breakers into the load centre or the AC combiner enclosure (bus, AC SPD, main ITM-1 at the load
+centre, circuit C-CCA); markers 1 on the branch home runs, 2 on the combiner output; memory,
+circuit boxes, inverter box and project line for micros; up to 8 units in 3 branches, larger
+designs refused with a clear message; rows scale down to fit before the breakers.
+**Tests**: tests/test_micro_sheet.py, tests/test_per_string_box_sheet.py.
+**Status**: Complete (PRs #79, #80)
+
+##### Stage 3.10.5: project sheet (pro mode) with micros
+**Goal**: project sheet rows "Tipo de inversor", "Microinversor", "Caja combinadora de CA"
+(Equipos) and "Calibre del troncal", "Separación entre microinversores" (Conductores);
+`sheet_request` maps them to `microinverters`, `ac_combiner`, `micro_trunk_size` (new request
+field: fixes every branch's trunk) and `routing.micro_spacing_m`; MIC rejections go back onto the
+micro or trunk cell; an older sheet without the rows stays a string design.
+**Tests**: tests/test_micro_pro_sheet.py (including a full design with the drawing).
+**Status**: Complete (PR #81)
+
+##### Stage 3.10.6: skills, MCP tools, release 0.9.0, editor notified
+**Goal**: `microinverters` / `ac_combiner` on the MCP sizing and design tools; server instructions,
+skills (diagrama, pro, catalogo), README and user guide; then release 0.9.0 and notify the editor.
+**Tests**: tests/test_mcp_micro.py.
+**Status**: Complete (PR #82); release 0.9.0 in progress
 
 ---
 

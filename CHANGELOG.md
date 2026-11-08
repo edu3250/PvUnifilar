@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-08
+
+### Added
+
+- MCP tools `size_pv_system` and `design_and_draw` accept `microinverters` (ids or "auto"; only when the user asks for them) and `ac_combiner`; the server instructions, the `diagrama`, `pro` and `catalogo` skills and the user guide explain when to use microinverters and the owner's datasheet criteria for adding one.
+
+- Professional mode with microinverters: the project sheet adds "Tipo de inversor", "Microinversor" and "Caja combinadora de CA" (Equipos) and "Calibre del troncal" and "Separación entre microinversores" (Conductores); the sheet designs and draws a micro system, a rejected microinverter or trunk goes back onto its cell, and an older sheet without these rows stays a string design. `SizingRequest.micro_trunk_size` fixes the trunk size of every branch.
+
+- The A3 sheet draws the per-string DC box: each string's gPV fuse (or DC breaker), its own SPD with its earth lead and its own two-pole switch `DCD-<string>`; the box's switches replace the inverter's integrated disconnect in the drawing. Capability `drawing.dc_box_per_string` is now supported.
+
+- The A3 sheet (`a3_plantilla_v1`) draws microinverter designs: each AC branch on its own row with a module on each used input, the units tapping the trunk, the junction box and the home run to the branch breaker; the branch breakers feed the load centre, or sit in the dashed AC combiner with its SPD and the main breaker ITM-1 at the load centre. The memory, the circuit boxes (1: branches, 2: combiner output or the breakers at the load centre), the inverter box and the project line describe the micro design. Up to 8 microinverters in 3 branches; a larger design is calculated but its drawing is refused with a clear message. Generated symbols: the microinverter's DC inputs are optional ports (a free input is not dangling). Capability `drawing.microinverters` is now supported.
+
+- Microinverters in the catalogue: Hoymiles HMS-800/900/1000-2T, Enphase IQ8HC-72-M-US (the Mexico datasheet; the installation manual states that only the IQ8HC works on the 220 V grid in Mexico, so the IQ8MC and IQ8AC are not loaded), APsystems DS3-H and DS3-LV (120 V, for the 1F-2H 127 V service). Owner criteria for datasheets: a missing real power equals the apparent power when the default power factor is at least 0.99; a missing largest branch breaker is left out and the NOM 240-4(d) limit applies; caps that change with the AC voltage keep the 220 V column.
+- `pvsld.graph_export.spec_to_graph`: a specification (from the sizing engine, the plugin or the editor's chatbot) becomes the editor's `pvsld.graph/1` drawing plus the template of the sections it does not draw, and `graph_to_spec` gives the same design back (string inverters with the shared or per-string DC box, microinverters, AC combiner). Node ids are the specification ids; catalogue references are recovered from the manufacturer and model.
+- Calculation report and bill of materials of microinverter designs: the memoria (Excel with live formulas and PDF) checks the module on each input, each AC branch (current, breaker, trunk-cable limit, manufacturer cap, home-run ampacity, daisy-chain voltage drop, kAIC), the AC combiner's main breaker and the 120 % busbar rule; the bill of materials lists the modules on the micro inputs, the microinverters, the trunk cable by size, the junction boxes and the combiner box. The project sheet is written for a micro design (its micro rows come with the professional mode).
+- Microinverter sizing: `size_pv_system` designs with microinverters when the request names them (`microinverters`: ids or `"auto"`; string inverters stay the default) and, on request, an AC combiner box (`ac_combiner`). It picks the smallest model whose recommended module power holds the module, the units (free inputs on the last one are warning MIC-015), the fewest AC branches with the units spread evenly and the smallest trunk per branch, the branch breakers and home-run conductors, and validates the schema 0.2.0 specification. The result carries a `MicroCandidate`; the MCP and CLI texts list the branches. `routing.micro_spacing_m` overrides the default spacing (1.2 m per connected module).
+
+### Changed
+
+- Microinverter records: the largest branch breaker of a trunk cable (`max_ocpd_a`) and the start voltage are optional, the input current may be set per model, and the spec's `micro` block lists the allowed trunk sizes (`trunk_sizes`) apart from their breakers.
+
 ## [0.8.0] - 2026-11-07
 
 ### Changed

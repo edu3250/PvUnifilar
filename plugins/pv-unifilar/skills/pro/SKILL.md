@@ -1,6 +1,6 @@
 ---
 name: pro
-description: Modo profesional de PvUnifilar. Entrega una hoja de proyecto en Excel para fijar cualquier valor (inversor, cadenas, fusibles, calibres, tubería, datos del servicio y datos personales) o diseña a partir de una hoja ya llenada, devolviendo las celdas por corregir en rojo. Úsala cuando el usuario quiera una hoja de proyecto, fijar valores del diseño o rediseñar con su Excel.
+description: Modo profesional de PvUnifilar. Entrega una hoja de proyecto en Excel para fijar cualquier valor (inversor o microinversor, cadenas, fusibles, calibres, troncal, tubería, datos del servicio y datos personales) o diseña a partir de una hoja ya llenada, devolviendo las celdas por corregir en rojo. Úsala cuando el usuario quiera una hoja de proyecto, fijar valores del diseño o rediseñar con su Excel.
 argument-hint: "nuevo | <hoja_de_proyecto.xlsx> | <nombre del proyecto>"
 allowed-tools: mcp__plugin_pv-unifilar_pvsld__new_project_sheet mcp__plugin_pv-unifilar_pvsld__design_from_project_sheet
 ---
@@ -15,7 +15,7 @@ The argument is what the user wrote with this command: `nuevo`, a project name, 
 
 1. Ask for a short project name if the user gave none (letters, digits, `-` and `_`; for example `casa_lopez`).
 2. Call `new_project_sheet` with that `name`.
-3. Tell the user where the sheet is, that they fill in the yellow cells (AUTO where the calculation should decide; personal data is optional and goes to the drawing as written), save it in the same place, and ask for the design of that project when it is ready (in Claude Code: `/pv-unifilar:pro <nombre>`).
+3. Tell the user where the sheet is, that they fill in the yellow cells (AUTO where the calculation should decide; personal data is optional and goes to the drawing as written), save it in the same place, and ask for the design of that project when it is ready (in Claude Code: `/pv-unifilar:pro <nombre>`). For microinverters they choose "Microinversor" in "Tipo de inversor" (Equipos) and may fix the model, the AC combiner box, the trunk size and the spacing; the string rows then do not apply.
 
 ## A filled sheet
 

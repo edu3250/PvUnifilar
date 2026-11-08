@@ -205,9 +205,14 @@ class MicroData(_Strict):
     recommended_module_power_wp: tuple[PositiveFloat, PositiveFloat] = Field(
         description="Recommended STC power of the module on each input (low, high)"
     )
+    trunk_sizes: list[ConductorSize] = Field(
+        default_factory=list,
+        description="Trunk cable sizes the manufacturer allows (empty: the keys of "
+        "trunk_max_ocpd_a)",
+    )
     trunk_max_ocpd_a: dict[ConductorSize, PositiveFloat] = Field(
         default_factory=dict,
-        description="Trunk cable sizes the manufacturer allows and the largest branch breaker",
+        description="Largest branch breaker the manufacturer allows, by trunk size (when given)",
     )
     max_units_per_trunk: dict[ConductorSize, PositiveInt] = Field(
         default_factory=dict, description="Manufacturer cap of units per AC branch, by trunk size"

@@ -1,0 +1,55 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per model.
+# Microinverter: 2 inputs, one PV module per input; units join on the AC bus cable (AC branch).
+component_type: microinverter
+family_id: APSYSTEMS-DS3-H
+manufacturer: APsystems
+model_family: DS3-H
+mppt_count: 2
+inputs_per_mppt: 1                          # "One microinverter connects to two solar modules"
+max_input_voltage_v: 60
+operating_input_voltage_range_v: [26, 60]
+mppt_voltage_range_v: [28, 45]              # "Peak Power Tracking Voltage"
+max_input_current_per_mppt_a: 20            # "20A x 2"
+max_short_circuit_current_per_mppt_a: 25    # "25A per input"
+mppt_efficiency_pct: 99.5
+grid: single_phase
+rated_ac_voltage_v: [240]
+ac_voltage_range_v: [211, 264]
+max_ac_current_reference_voltage_v: 220     # 4.77 A = 1050 W / 220 V (owner decision, see notes)
+frequency_hz: [60]
+power_factor_range: [0.99, 0.99]            # "Power Factor (Default/Adjustable) >0.99"
+thd_max_pct: 3
+topology: High Frequency Transformers, Galvanically Isolated (as printed)
+night_power_w: 0.02
+dc_connector: MC4 Compatible
+communication: Encrypted ZigBee
+operating_temp_c: [-40, 65]
+ip_rating: Type 6 (NEMA enclosure type, as printed)
+weight_kg: 3.2
+dimensions_mm: [263, 218, 42.5]
+trunk_cables:                               # "AC Bus Cable 10AWG(35A) / 12AWG(28A)": cable ampacities
+  - {size: 12 AWG}                          # owner criterion B: no largest breaker given
+  - {size: 10 AWG}
+variants:
+  - {component_id: APSYSTEMS-DS3-H, recommended_module_power_wp: [330, 660], rated_ac_power_w: 1050, max_apparent_power_va: 1050, max_ac_output_current_a: 4.77, max_efficiency_pct: 97.3, max_units_per_trunk: {12 AWG: 6, 10 AWG: 7}}
+source:
+  filename: APsystems DS3-H Datasheet - MX-EN.pdf
+  sha256: 8cc3031df20f0ed18104947c60a176bc7dbda74b30e2cacaa495e996cf0dfbdf
+  title: APsystems DS3-H Microinverter datasheet, region LATAM (2025/12/11 Rev1.5)
+  pages: [1, 2]
+  extraction_method: rendered_page
+  extraction_date: 2026-11-08
+  reviewed_by: edu3250
+  review_date: 2026-11-08
+  notes: >-
+    The owner provided the PDF on 2026-11-08 and confirmed the values and decisions the same day. The output is
+    printed only at 240 V ("Nominal Output Voltage/Range 240V/211V-264V", "Nominal Output Current 4.4A",
+    1050 / 240 = 4.375 A); the 220 V of the 2F-3H service is inside the range, and the owner decided to record the
+    current at 220 V, 1050 W / 220 V = 4.77 A (deduced, conservative), hence max_ac_current_reference_voltage_v
+    220. Owner criterion A: only the real power is printed ("Maximum Continuous Output Power 1050W") with a power
+    factor > 0.99, so max_apparent_power_va = rated_ac_power_w. Owner criterion B: "AC Bus Cable 10AWG(35A) /
+    12AWG(28A)" gives cable ampacities, not a largest branch breaker, so the trunk cables carry no max_ocpd_a and the
+    NOM 240-4(d) limit applies. No start voltage is printed (startup_voltage_v left out). The recommended module
+    power is printed "330Wp-660Wp+". Peak efficiency 97.3 %, CEC 97 %. Frequency range 59.3-60.5 Hz. Storage
+    -40 to +85 °C. Up to 80 inverters per ECU recommended. Compliance: UL1741 (IEEE1547); CSA C22.2 No. 107.1-16;
+    NOM-001; NEC 2014/2017/2020 section 690.12 rapid shutdown. Warranty 12 years standard, 25 optional.

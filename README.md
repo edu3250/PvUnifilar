@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/edu3250/PvUnifilar/actions/workflows/ci.yml"><img src="https://github.com/edu3250/PvUnifilar/actions/workflows/ci.yml/badge.svg?branch=develop" alt="CI"></a>
-  <img src="https://img.shields.io/badge/versi%C3%B3n-v0.8.0-blue" alt="Versión v0.8.0">
+  <img src="https://img.shields.io/badge/versi%C3%B3n-v0.9.0-blue" alt="Versión v0.9.0">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12-blue" alt="Python 3.11 | 3.12">
   <img src="https://img.shields.io/badge/MCP-servidor%20stdio-8A2BE2" alt="Servidor MCP stdio">
   <img src="https://img.shields.io/badge/Claude%20Code-plugin-D97757" alt="Plugin de Claude Code">
@@ -162,7 +162,7 @@ Lado CA:
 **3. Primer arranque.** La primera vez, uv descarga unos 60 MB de dependencias (de 15 segundos a un minuto), y eso puede tardar más que los 30 segundos que Claude Code espera a un servidor. Si `/mcp` muestra `pvsld` como fallido, reconéctalo ahí cuando termine la descarga, o descárgalo antes desde una terminal:
 
 ```bash
-uvx --from pvsld==0.8.0 pvsld-mcp --version
+uvx --from pvsld==0.9.0 pvsld-mcp --version
 ```
 
 **4. Usarlo.** Pídelo con tus palabras, o usa los comandos:
@@ -208,7 +208,7 @@ El plugin es una capa delgada sobre un **servidor MCP stdio** estándar, `pvsld-
 <summary><b>Claude Code</b>, sin el plugin</summary>
 
 ```bash
-claude mcp add pvsld -- uvx --from pvsld==0.8.0 pvsld-mcp
+claude mcp add pvsld -- uvx --from pvsld==0.9.0 pvsld-mcp
 ```
 
 o en el `.mcp.json` de un proyecto:
@@ -218,7 +218,7 @@ o en el `.mcp.json` de un proyecto:
   "mcpServers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.8.0", "pvsld-mcp"],
+      "args": ["--from", "pvsld==0.9.0", "pvsld-mcp"],
       "env": { "PVSLD_OUTPUT_DIR": "out" }
     }
   }
@@ -237,7 +237,7 @@ Agrega el mismo servidor a `claude_desktop_config.json` (Settings → Developer 
   "mcpServers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.8.0", "pvsld-mcp"],
+      "args": ["--from", "pvsld==0.9.0", "pvsld-mcp"],
       "env": { "PVSLD_OUTPUT_DIR": "C:\\Users\\tu_usuario\\Documents\\unifilares" }
     }
   }
@@ -256,7 +256,7 @@ En `.vscode/mcp.json` la clave principal es `servers`:
   "servers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.8.0", "pvsld-mcp"]
+      "args": ["--from", "pvsld==0.9.0", "pvsld-mcp"]
     }
   }
 }
@@ -352,7 +352,8 @@ Las decisiones de diseño están en [`docs/decisions/`](docs/decisions/), empeza
 
 ## Alcance y límites
 
-- El catálogo incluido es pequeño  (cada ficha se revisa contra su hoja técnica): módulos Jinko y ET Solar, inversores Growatt MIN y Huawei SUN2000, fusibles gPV Littelfuse y Eaton, interruptores de CD Schneider y Suntree, un seccionador FV Suntree, interruptores Square D QO y cable fotovoltaico Viakon. Lo demás se agrega a tu catálogo local desde su hoja técnica.
+- Con inversor de cadena (hasta dos cadenas) o con microinversores (un modelo por diseño; el plano dibuja hasta 8 en 3 ramas, con o sin caja combinadora de CA). Los microinversores se usan solo cuando los pides.
+- El catálogo incluido es pequeño  (cada ficha se revisa contra su hoja técnica): módulos Jinko y ET Solar, inversores Growatt MIN y Huawei SUN2000, microinversores Growatt NEO, Hoymiles HMS, Enphase IQ8HC y APsystems DS3, fusibles gPV Littelfuse y Eaton, interruptores de CD Schneider y Suntree, un seccionador FV Suntree, interruptores Square D QO y cable fotovoltaico Viakon. Lo demás se agrega a tu catálogo local desde su hoja técnica.
 - El plugin funciona en Claude Code, Copilot CLI y Antigravity CLI. No funciona en claude.ai en el navegador, porque el servidor corre en tu computadora.
 - El DWG y el PDF de AutoCAD necesitan un AutoCAD con licencia en Windows.
 
@@ -379,6 +380,7 @@ pvsld design examples/quick_request.yaml -o out/demo --no-autocad
 
 | Versión | Contenido |
 |---|---|
+| `v0.9.0` | Microinversores en el plugin: dimensionamiento, memoria de cálculo, plano A3 y hoja de proyecto; de la especificación al dibujo del editor; microinversores Hoymiles HMS, Enphase IQ8HC y APsystems DS3; caja de CD por cadena en el plano |
 | `v0.8.0` | Microinversores: catálogo (Growatt NEO M-X2), reglas NOM por rama de CA, ramas y caja combinadora de CA en la especificación (formato 0.2.0), revisiones del editor, símbolos y dibujo en el editor; inversores trifásicos Solis en el catálogo (aún no diseñables) |
 | `v0.7.3` | Polos del fusible y del ITM de cada cadena según el aterrizamiento del arreglo (2 no aterrizado, 1 aterrizado) |
 | `v0.7.2` | Caja de protecciones CD por cadena (seccionador y DPS propios por cadena); revisión de cada DPS; el dimensionamiento elige el DPS del catálogo |

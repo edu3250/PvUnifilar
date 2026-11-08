@@ -49,10 +49,10 @@ def layout_diagram(spec: PvSystemSpec, derived: Derived) -> Diagram:
         LayoutError: the spec is outside the template.
         SheetTemplateError: the sheet template file is missing or does not match.
     """
-    if spec.ac_branches:
+    if spec.ac_branches and spec.layout.template != SHEET_LAYOUT:
         raise LayoutError(
-            "El plano con microinversores todavía no está disponible (capacidad "
-            "«drawing.microinverters» pendiente); el diseño sí se valida y se revisa."
+            f"El plano con microinversores se dibuja en la plantilla {SHEET_LAYOUT}; "
+            f"«{spec.layout.template}» solo dibuja inversores de cadena."
         )
     if spec.layout.template == SHEET_LAYOUT:
         from pvsld.sheets import load_sheet_template

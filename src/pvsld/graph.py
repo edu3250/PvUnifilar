@@ -484,7 +484,16 @@ def graph_to_spec(
     spec: dict[str, Any] = {
         key: copy.deepcopy(value)
         for key, value in template.items()
-        if key not in ("modules", "inverters", "strings", "circuits", "dc_bos")
+        if key
+        not in (
+            "modules",
+            "inverters",
+            "strings",
+            "circuits",
+            "dc_bos",
+            "ac_branches",
+            "ac_combiner",
+        )
     }
     spec["schema_version"] = SCHEMA_VERSION
     spec.setdefault("standards", {"nom_edition": "NOM-001-SEDE-2012", "rulepack": "mx-gd-2026.10"})
@@ -1313,7 +1322,10 @@ def _micro_side(
         if drawn:
             trunk_size = drawn[-1]
         else:
-            allowed = sorted(limits.trunk_max_ocpd_a, key=_awg_rank) or ["12 AWG", "10 AWG"]
+            allowed = sorted(limits.allowed_trunk_sizes, key=_awg_rank) or [
+                "12 AWG",
+                "10 AWG",
+            ]
             fits = [
                 size
                 for size in allowed
@@ -1326,7 +1338,8 @@ def _micro_side(
                 "la rama (NOM y tabla del fabricante).",
             )
 
-        known = all(c.length_m is not None for u in members for c in u.path)
+        # Taps and the link to the junction box may carry no length; the segments do.
+        known = any(c.length_m is not None for c in trunk)
         if len(members) > 1 and known:
             spacing = round((members[-1].distance - members[0].distance) / (len(members) - 1), 2)
         else:

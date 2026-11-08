@@ -60,7 +60,7 @@ La primera vez, uv descarga unos 60 MB de dependencias. Con una conexión normal
 - **Descargarlo antes** (recomendado). En una terminal, una sola vez:
 
   ```bash
-  uvx --from pvsld==0.8.0 pvsld-mcp --version
+  uvx --from pvsld==0.9.0 pvsld-mcp --version
   ```
 
   Cuando responda con el número de versión, abre Claude Code.
@@ -108,7 +108,18 @@ Más ejemplos:
 /pv-unifilar:diagrama 8 paneles Jinko de 475 W con el inversor Growatt de 3 kW
 /pv-unifilar:diagrama un sistema de 5 kW con paneles ET Solar de 550 W
 /pv-unifilar:diagrama 10 paneles Jinko 475, llámalo casa_lopez, 40 m del techo al inversor
+/pv-unifilar:diagrama 10 paneles Jinko de 650 W con microinversores
+/pv-unifilar:diagrama 8 paneles Jinko 480 con microinversores Enphase y caja combinadora
 ```
+
+**Con microinversores.** Solo se usan cuando los pides ("con microinversores") o nombras uno (Enphase, Hoymiles, APsystems, Growatt NEO). El cálculo:
+
+- elige el microinversor más chico cuyo rango recomendado de potencia incluye tu módulo;
+- pone un módulo por entrada; si el último microinversor queda con entradas libres, te avisa;
+- reparte los microinversores en el menor número de ramas de CA, con el ITM de cada rama a 1.25 veces la suma de sus corrientes y sin pasar el límite de la NOM para el calibre del troncal (20 A en 12 AWG, 30 A en 10 AWG); el tope de microinversores del fabricante se respeta además;
+- pone una caja combinadora de CA solo si la pides.
+
+El plano dibuja hasta 8 microinversores en 3 ramas. Un sistema más grande se calcula, pero el plano no se genera.
 
 **Lo que el modo rápido supone** cuando no lo dices:
 
@@ -193,9 +204,9 @@ Si la carpeta ya existe, Claude te pregunta antes de reemplazarla.
 | Hoja | Parámetros |
 |---|---|
 | **Proyecto** | Nombre del proyecto, propietario, dirección, coordenadas, RPU, número de servicio y de medidor, tarifa, sistema de suministro (1F-2H o 2F-3H), tensión, corriente de falla, ingeniero responsable, cédula, empresa, UVIE y fecha. |
-| **Equipos** | Módulo, cantidad de módulos, número de cadenas, módulos por cadena e inversor. |
+| **Equipos** | Módulo, cantidad de módulos, número de cadenas, módulos por cadena e inversor; con microinversores: tipo de inversor, microinversor y caja combinadora de CA. |
 | **Protecciones** | Fusible gPV o interruptor de CD por cadena, seccionador de la caja, supresores de CD y CA, interruptor de salida del inversor (ITM-1), interruptor principal (ITM-P) y barra del centro de carga. |
-| **Conductores** | Longitudes, cable y calibre de CD, calibre de CA, tubería EMT y caída de tensión máxima de cada lado. |
+| **Conductores** | Longitudes, cable y calibre de CD, calibre de CA, tubería EMT y caída de tensión máxima de cada lado; con microinversores: calibre del troncal y separación entre microinversores. |
 | **Tierra** | Electrodo, resistencia de diseño y conductores del electrodo. |
 
 Los equipos se eligen de listas desplegables que salen del catálogo, incluidos los que tú agregaste.
@@ -346,12 +357,12 @@ Tus proyectos y tu catálogo local no se borran.
 **Lo que hace esta versión**
 
 - Sistemas interconectados sin baterías, en baja tensión, con servicio de CFE 1F-2H o 2F-3H.
-- Un inversor de cadena y hasta dos cadenas.
+- Un inversor de cadena y hasta dos cadenas, o microinversores (un modelo por diseño, hasta 8 en 3 ramas en el plano), con o sin caja combinadora de CA.
 - Conductores de cobre en tubería EMT.
 
 **Lo que no hace**
 
-- Sistemas con baterías, microinversores, varios inversores, o servicio trifásico o en media tensión.
+- Sistemas con baterías, varios inversores de cadena, microinversores junto con un inversor de cadena, o servicio trifásico o en media tensión.
 - El trámite de interconexión ni sus formatos: entrega el plano, la memoria y la lista de materiales.
 - No sustituye la revisión de un ingeniero: el resultado es un borrador.
 
@@ -435,7 +446,7 @@ En una carpeta `PvUnifilar` dentro de tu carpeta de usuario (en Windows, `C:\Use
 Igual que en Claude Code, la primera vez se descargan las dependencias. Conviene hacerlo antes, una sola vez:
 
 ```bash
-uvx --from pvsld==0.8.0 pvsld-mcp --version
+uvx --from pvsld==0.9.0 pvsld-mcp --version
 ```
 
 ### Cualquier otro cliente MCP
@@ -447,7 +458,7 @@ El plugin es una capa sobre un servidor MCP estándar. En un cliente que no lee 
   "mcpServers": {
     "pvsld": {
       "command": "uvx",
-      "args": ["--from", "pvsld==0.8.0", "pvsld-mcp"]
+      "args": ["--from", "pvsld==0.9.0", "pvsld-mcp"]
     }
   }
 }

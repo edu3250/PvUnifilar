@@ -401,6 +401,21 @@ def sheet_request(
         (e, "Inversor"), (c.component_id for c in registry.inverters()), "inversor"
     )
     request["inverters"] = [inverter] if inverter else "auto"
+    # Microinverters (rows added in 0.9.0; an older sheet without them is a string design).
+    if (e, "Tipo de inversor") in cells and v.choice(
+        (e, "Tipo de inversor"), ["Cadena", "Microinversor"], default="Cadena"
+    ) == "Microinversor":
+        micro = v.component(
+            (e, "Microinversor"),
+            (c.component_id for c in registry.microinverters()),
+            "microinversor",
+        )
+        request["microinverters"] = [micro] if micro else "auto"
+        request["ac_combiner"] = (
+            v.choice((e, "Caja combinadora de CA"), ["No", "Sí"], default="No") == "Sí"
+        )
+        request.pop("n_strings", None)
+        request.pop("n_series", None)
 
     # Protecciones.
     r = "Protecciones"
@@ -481,6 +496,14 @@ def sheet_request(
     limits = template["standards"]["vd_limits_pct"]
     put(limits, "dc", v.number((c, "Caída de tensión máxima CD"), low=0.1, high=5))
     put(limits, "ac", v.number((c, "Caída de tensión máxima CA"), low=0.1, high=5))
+    if "microinverters" in request:
+        put(request, "micro_trunk_size", v.size((c, "Calibre del troncal")))
+        if not v.auto((c, "Separación entre microinversores")):
+            put(
+                routing,
+                "micro_spacing_m",
+                v.number((c, "Separación entre microinversores"), low=0.1, high=99),
+            )
 
     # Tierra.
     t = "Tierra"
@@ -510,6 +533,10 @@ _SERIES_RULES = {"VOLT-001", "VOLT-002", "VOLT-003", "STR-001", "STR-002", "STR-
 
 def _cell_of(rule: str, subject: str, request: Mapping[str, Any]) -> Key:
     """The cell a rejected fixed value lives in (the inverter when nothing more precise fits)."""
+    if rule in {"MIC-011", "MIC-012", "MIC-013"}:
+        return ("Conductores", "Calibre del troncal")
+    if rule.startswith("MIC-"):
+        return ("Equipos", "Microinversor")
     if rule == "REQ-002":
         return ("Equipos", "Número de cadenas")
     if rule == "REQ-001":
@@ -594,6 +621,7 @@ _EQUIPMENT = {
         "Número de cadenas",
         "Módulos por cadena",
         "Inversor",
+        "Microinversor",
     )
 }
 

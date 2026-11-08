@@ -31,6 +31,9 @@ def _lists(registry: Any, tables: Any) -> dict[str, list[str]]:
     return {
         "L_Modulos": [c.component_id for c in registry.modules()],
         "L_Inversores": [AUTO] + [c.component_id for c in registry.inverters()],
+        "L_TipoInversor": ["Cadena", "Microinversor"],
+        "L_Micros": [AUTO] + [c.component_id for c in registry.microinverters()],
+        "L_Troncal": [AUTO, "12 AWG", "10 AWG"],
         "L_Fusibles": [AUTO] + [c.component_id for c in registry.dc_fuses()],
         "L_ITMCD": [AUTO] + [c.component_id for c in registry.dc_breakers()],
         "L_Seccionadores": [AUTO] + [c.component_id for c in registry.dc_switches()],
@@ -107,10 +110,15 @@ def _rows(
         )
         return f'{_g(r.trade_size_mm)} mm ({trade}")' if trade else f"{_g(r.trade_size_mm)} mm"
 
-    n_modules = sum(x.n_series for x in s.strings) if s else 10
-    n_strings = len(s.strings) if s else None
-    n_series = s.strings[0].n_series if s else None
+    micro_inputs = sum(len(u.inputs) for b in s.ac_branches for u in b.microinverters) if s else 0
+    n_modules = sum(x.n_series for x in s.strings) + micro_inputs if s else 10
+    n_strings = len(s.strings) if s and s.strings else None
+    n_series = s.strings[0].n_series if s and s.strings else None
     ratio = derived.dc_ac_ratio if derived else None
+    micro = next((i for i in s.inverters if i.type == "micro"), None) if s else None
+    branches = s.ac_branches if s else []
+    trunks = ", ".join(dict.fromkeys(b.trunk_size for b in branches))
+    spacing = branches[0].spacing_m if branches else None
     return {
         "Proyecto": [
             "Proyecto",
@@ -187,6 +195,31 @@ def _rows(
                 "",
                 "Solo lectura",
                 f"{ratio:.2f}" if ratio is not None else "",
+            ),
+            "Microinversores",
+            (
+                "Tipo de inversor",
+                "Microinversor" if micro else "Cadena",
+                "",
+                "L_TipoInversor",
+                "",
+                "Microinversor: un módulo por entrada; las filas de cadenas y de la caja CD no "
+                "aplican",
+            ),
+            (
+                "Microinversor",
+                AUTO,
+                "",
+                "L_Micros",
+                f"{micro.manufacturer} {micro.model} × {micro.qty}" if micro else "",
+            ),
+            (
+                "Caja combinadora de CA",
+                "Sí" if s and s.ac_combiner else "No",
+                "",
+                "L_SiNo",
+                "",
+                "ITM de rama y DPS en una caja; un ITM general al centro de carga",
             ),
         ],
         "Protecciones": [
@@ -271,6 +304,8 @@ def _rows(
                 ac_c.length_m if ac_c else 30,
                 "m",
                 "Número (un sentido)",
+                "",
+                "Con microinversores: de la caja de conexiones de cada rama a su ITM",
             ),
             (
                 "Separación del tubo sobre el techo",
@@ -297,6 +332,16 @@ def _rows(
             ("Calibre de CA", AUTO, "", "L_Calibres", ac_c.conductors.size if ac_c else ""),
             ("Tubo de CA (EMT)", AUTO, "", "L_EMT", race(ac_c)),
             ("Caída de tensión máxima CA", s.standards.vd_limits_pct.ac if s else 2, "%", "Número"),
+            "Ramas de microinversores (CA)",
+            ("Calibre del troncal", AUTO, "", "L_Troncal", trunks),
+            (
+                "Separación entre microinversores",
+                AUTO,
+                "m",
+                "AUTO o número",
+                f"{spacing:g}" if spacing is not None else "",
+                "Por omisión 1.2 m por módulo conectado",
+            ),
         ],
         "Tierra": [
             "Electrodo",
