@@ -42,6 +42,7 @@ COMPONENT_TYPES = (
     "pv_module",
     "string_inverter",
     "hybrid_inverter",
+    "microinverter",
     "dc_breaker",
     "dc_fuse",
     "ac_breaker",

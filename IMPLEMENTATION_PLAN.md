@@ -877,6 +877,32 @@ NOM text).
 **Tests**: tests/test_string_ocpd_poles.py.
 **Status**: Complete (PR #66)
 
+#### Stage 3.9: Microinverters (engine and editor; plugin later)
+Owner request 2026-11-07, Growatt NEO 1600~2500M-X2 first. Decisions: AC branch limit = NOM
+690-8(b) 1.25 x sum(Iac) <= ITM <= 240-4(d), manufacturer table as an extra cap; module input
+check Isc <= input Isc max (no 1.25); service voltage must be inside the micro AC range; branch
+protection ITM per branch in the load centre by default, AC combiner box as an option; no
+monitoring gateway; one symbol per micro; no mixed micro + string systems; no fixed branch limit
+(705-12(d) busbar check); one micro model per design.
+
+##### Stage 3.9.1: microinverter catalogue type
+**Goal**: `microinverter` record type (`pvsld.catalogue.microinverters`), separate from string
+inverters, with the manufacturer's trunk-cable and drop-cable tables; Growatt NEO M-X2 record.
+**Tests**: tests/test_catalogue_micro.py.
+**Status**: In Progress
+
+##### Stage 3.9.2: microinverter rules (module inputs, service voltage, AC branch)
+**Status**: Not Started
+
+##### Stage 3.9.3: spec AC branches, validation, evaluate_draft / evaluate_choices
+**Status**: Not Started
+
+##### Stage 3.9.4: pvsld.graph micro nodes, palette, capabilities; editor notified
+**Status**: Not Started
+
+##### Stage 3.9.5: release 0.8.0
+**Status**: Not Started
+
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:

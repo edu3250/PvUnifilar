@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Solis S5-GC15K/20K/23K-LV three-phase inverters in the catalogue (3 MPPT, 2 inputs each, 32 A / 50 A per MPPT). The engine does not design three-phase services yet: the palette marks them `designable: false` with the reason, and `graph_to_spec` reports a three-phase inverter as `unsupported`.
+- Microinverter record type in the catalogue (`component_type: microinverter`, `pvsld.catalogue.Microinverter`), separate from string inverters: DC inputs with one module each, AC voltage window, and the manufacturer's tables of units per AC trunk cable, largest branch breaker and drop-cable length. Growatt NEO 1600M/1800M/2000M/2250M/2500M-X2 loaded (the 2250 keeps 2250 W: the datasheet's 2550 W exceeds its 2250 VA). The engine does not design with microinverters yet.
 - Capability matrix: `dc_box.combined` (two strings paralleled after their fuses into one MPPT input, ENG-016) as pending, since no single-phase inverter in the catalogue takes two strings on one input.
 
 ## [0.7.3] - 2026-11-06
