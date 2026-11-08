@@ -32,7 +32,7 @@ def _report(registry, modules: int = 10, **extra: Any):
         {
             "template": load_quick_template(),
             "module": MODULE,
-            "microinverters": "auto",
+            "microinverters": [f"GROWATT-NEO-{w}M-X2" for w in (1600, 1800, 2000, 2250, 2500)],
             "module_count_min": modules,
             "module_count_max": modules,
             **extra,

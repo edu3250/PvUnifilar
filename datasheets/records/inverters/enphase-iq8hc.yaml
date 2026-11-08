@@ -1,0 +1,58 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per model.
+# Microinverter: 1 input (one PV module); units join on the Enphase IQ Cable (12 AWG trunk).
+component_type: microinverter
+family_id: ENPHASE-IQ8HC
+manufacturer: Enphase
+model_family: IQ8HC
+mppt_count: 1
+inputs_per_mppt: 1
+max_input_voltage_v: 60
+startup_voltage_v: 22                       # "Tensión de arranque mín./máx. 22/58"
+operating_input_voltage_range_v: [18, 58]
+mppt_voltage_range_v: [29.5, 45]
+max_input_current_per_mppt_a: 14            # "Corriente continua operativa de CC de entrada"
+max_short_circuit_current_per_mppt_a: 20    # "Máxima Isc del módulo" (the input itself: 25 A, see notes)
+grid: single_phase
+rated_ac_voltage_v: [220, 240]
+ac_voltage_range_v: [198, 264]              # owner criterion C: the 220 V column
+max_ac_current_reference_voltage_v: 220
+frequency_hz: [60]
+power_factor_range: [-0.85, 0.85]           # "0.85 capacitiva ... 0.85 inductiva"
+thd_max_pct: 5
+topology: Gabinete de doble aislamiento Clase II (as printed)
+night_power_w: 0.023
+dc_connector: Stäubli MC4
+ac_connection: Enphase AC connector (IQ Cable)
+communication: PLC
+operating_temp_c: [-40, 65]
+ip_rating: NEMA Type 6, exterior
+weight_kg: 1.1
+dimensions_mm: [212, 175, 30.2]
+trunk_cables:
+  - {size: 12 AWG, max_ocpd_a: 20}          # IQ Cable 12 AWG; "un máximo de 20 A por circuito derivado"
+variants:
+  - {component_id: ENPHASE-IQ8HC-72-M-US, recommended_module_power_wp: [320, 540], rated_ac_power_w: 380, max_apparent_power_va: 380, max_ac_output_current_a: 1.73, max_efficiency_pct: 97.21, max_units_per_trunk: {12 AWG: 9}}
+source:
+  filename: dsh-00064-es-mx-iq8hc-mc4.pdf
+  sha256: 6b496544ee1a75386e620faf13ae7c333c0413eda4532412e5724841f83ee5d8
+  title: Enphase IQ8HC Microinverter, ficha técnica México (DSH-00064-5.0-ES-2025-08-26)
+  pages: [1, 2, 3, 4]
+  extraction_method: rendered_page
+  extraction_date: 2026-11-08
+  reviewed_by: edu3250
+  review_date: 2026-11-08
+  notes: >-
+    The owner provided the PDF (Mexico edition) on 2026-11-08, after the installation manual showed that only the
+    IQ8HC is compatible with the 220 V grid in Mexico (manual sections 2.3 and 2.4; the IQ8MC and IQ8AC are "NA" at
+    220 V and were not loaded). Values read from the rendered pages. Owner criterion C: the 220 V column
+    ("220, monofásico/trifásico (L-L), 120°": grid range 198-264 V, maximum continuous output current 1.73 A,
+    9 units per 20 A branch, maximum efficiency 97.21 %, CEC 96.50 %); the 240 V split-phase column gives
+    211-264 V, 1.58 A, 10 units, 97.31 %. Owner criterion A: rated_ac_power_w is the maximum continuous output
+    power 380 VA (power factor setting 1.0); the peak output power is 384 VA. The input lists two short-circuit
+    limits: "Máxima Isc del módulo" 20 A (the module compatibility limit, used by MIC-002) and "Máxima corriente
+    de corto circuito en CC de entrada" 25 A. The trunk is the IQ Cable, "un cable 12 AWG de longitud continua"
+    (page 4), and the AC side requires "un máximo de 20 A por circuito derivado"; 1.25 x 9 x 1.73 A = 19.5 A, so
+    the NOM limit and the manufacturer's coincide. Ungrounded array, no additional DC protection required, DC port
+    backfeed 0 mA; AC short-circuit current over 3 cycles 2.70 A; overvoltage class DC II, AC III. Certifications
+    include UL 1741-SA/SB, IEEE 1547:2018, UL 62109-1 and NOM-001-SCFI-2018; UL listed as PV rapid shutdown
+    equipment. The manual recommends a total voltage rise below 2 % from the branch to the load centre breaker.

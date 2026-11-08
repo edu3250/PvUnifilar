@@ -43,7 +43,12 @@ def limits_of(micro: Microinverter) -> MicroLimits:
         recommended_module_power_wp=micro.recommended_module_power_wp,
         ac_voltage_range_v=micro.ac_voltage_range_v,
         max_ac_output_current_a=micro.max_ac_output_current_a,
-        trunk_max_ocpd_a={cable.size: cable.max_ocpd_a for cable in micro.trunk_cables},
+        trunk_max_ocpd_a={
+            cable.size: cable.max_ocpd_a
+            for cable in micro.trunk_cables
+            if cable.max_ocpd_a is not None
+        },
+        trunk_sizes=tuple(cable.size for cable in micro.trunk_cables),
         max_units_per_trunk=dict(micro.max_units_per_trunk),
         max_drop_cable_length_m=dict(micro.max_drop_cable_length_m),
     )

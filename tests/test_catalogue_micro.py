@@ -23,7 +23,7 @@ def _family_data() -> dict[str, Any]:
 
 def test_neo_family_loads_every_model(registry) -> None:
     micros = registry.microinverters()
-    assert [m.component_id for m in micros] == [
+    assert [m.component_id for m in micros if m.manufacturer == "Growatt"] == [
         "GROWATT-NEO-1600M-X2",
         "GROWATT-NEO-1800M-X2",
         "GROWATT-NEO-2000M-X2",
@@ -87,3 +87,63 @@ def test_more_than_one_module_per_input_is_rejected() -> None:
     data["inputs_per_mppt"] = 2
     with pytest.raises(ValidationError, match="inputs_per_mppt"):
         MicroinverterFamily.model_validate(data)
+
+
+# --- More microinverters (2026-11-08) and the owner's datasheet criteria -----------------------
+
+
+@pytest.mark.parametrize(
+    ("component_id", "inputs", "current", "units_12", "units_10"),
+    [
+        ("HOYMILES-HMS-800-2T", 2, 3.64, (4, 5), (6, 8)),
+        ("HOYMILES-HMS-1000-2T", 2, 4.55, (3, 4), (5, 7)),
+        ("ENPHASE-IQ8HC-72-M-US", 1, 1.73, (9, 9), None),
+        ("APSYSTEMS-DS3-H", 2, 4.77, (3, 6), (5, 7)),
+        ("APSYSTEMS-DS3-LV", 2, 7.5, (2, 3), (3, 4)),
+    ],
+)
+def test_nom_and_manufacturer_branch_limits(
+    registry, component_id, inputs, current, units_12, units_10
+) -> None:
+    from pvsld.core.tables import get_tables
+    from pvsld.sizing import micro
+
+    tables = get_tables("NOM-001-SEDE-2012")
+    model = registry.get(component_id)
+    assert (model.mppt_count, model.max_ac_output_current_a) == (inputs, current)
+    for size, expected in (("12 AWG", units_12), ("10 AWG", units_10)):
+        if expected is None:
+            assert model.trunk_cable(size) is None
+            continue
+        limit = micro.branch_limit(model, size, tables)
+        assert (limit.nom_units, limit.manufacturer_units) == expected
+
+
+def test_criterion_a_real_power_from_apparent_power(registry) -> None:
+    assert registry.get("HOYMILES-HMS-900-2T").rated_ac_power_w == 900
+    assert registry.get("ENPHASE-IQ8HC-72-M-US").rated_ac_power_w == 380  # continuous, not 384
+
+
+def test_criterion_b_no_breaker_leaves_the_nom_limit(registry) -> None:
+    cable = registry.get("HOYMILES-HMS-800-2T").trunk_cable("12 AWG")
+    assert cable is not None
+    assert cable.max_ocpd_a is None
+    assert registry.get("ENPHASE-IQ8HC-72-M-US").trunk_cable("12 AWG").max_ocpd_a == 20
+
+
+def test_input_current_per_model(registry) -> None:
+    currents = [
+        registry.get(f"HOYMILES-HMS-{w}-2T").max_input_current_per_mppt_a for w in (800, 900, 1000)
+    ]
+    assert currents == [14, 15, 16]
+
+
+def test_a_missing_start_voltage_falls_back_to_the_mppt_window(registry) -> None:
+    from pvsld.sizing.adapters import to_spec_microinverter
+
+    model = registry.get("APSYSTEMS-DS3-H")
+    assert model.startup_voltage_v is None
+    spec = to_spec_microinverter(model, inverter_id="INVM1", qty=1, ac_voltage_v=220, phases=2)
+    assert spec.vdc_start_v == 28
+    assert spec.micro.trunk_sizes == ["12 AWG", "10 AWG"]
+    assert spec.micro.trunk_max_ocpd_a == {}
