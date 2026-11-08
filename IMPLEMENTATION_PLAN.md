@@ -983,10 +983,13 @@ designs refused with a clear message; rows scale down to fit before the breakers
 field: fixes every branch's trunk) and `routing.micro_spacing_m`; MIC rejections go back onto the
 micro or trunk cell; an older sheet without the rows stays a string design.
 **Tests**: tests/test_micro_pro_sheet.py (including a full design with the drawing).
-**Status**: In Progress
+**Status**: Complete (PR #81)
 
 ##### Stage 3.10.6: skills, MCP tools, release 0.9.0, editor notified
-**Status**: Not Started
+**Goal**: `microinverters` / `ac_combiner` on the MCP sizing and design tools; server instructions,
+skills (diagrama, pro, catalogo), README and user guide; then release 0.9.0 and notify the editor.
+**Tests**: tests/test_mcp_micro.py.
+**Status**: In Progress
 
 ---
 

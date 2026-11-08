@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP tools `size_pv_system` and `design_and_draw` accept `microinverters` (ids or "auto"; only when the user asks for them) and `ac_combiner`; the server instructions, the `diagrama`, `pro` and `catalogo` skills and the user guide explain when to use microinverters and the owner's datasheet criteria for adding one.
+
 - Professional mode with microinverters: the project sheet adds "Tipo de inversor", "Microinversor" and "Caja combinadora de CA" (Equipos) and "Calibre del troncal" and "Separación entre microinversores" (Conductores); the sheet designs and draws a micro system, a rejected microinverter or trunk goes back onto its cell, and an older sheet without these rows stays a string design. `SizingRequest.micro_trunk_size` fixes the trunk size of every branch.
 
 - The A3 sheet draws the per-string DC box: each string's gPV fuse (or DC breaker), its own SPD with its earth lead and its own two-pole switch `DCD-<string>`; the box's switches replace the inverter's integrated disconnect in the drawing. Capability `drawing.dc_box_per_string` is now supported.

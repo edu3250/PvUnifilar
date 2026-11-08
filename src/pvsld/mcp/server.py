@@ -135,7 +135,8 @@ NOM-001-SEDE-2012).
 Quick mode ("un diagrama con 5 paneles Jinko"): find the module with list_components, then call \
 design_and_draw once; it writes the DWG or DXF, the PDF, the calculation report, the project \
 sheet and the bill of materials into one project folder. Pass on its explanation and summary in \
-Spanish.
+Spanish. Use microinverters (the microinverters argument) only when the user asks for them or \
+names one; otherwise string inverters.
 Professional mode: new_project_sheet gives a blank project sheet; the user fills it in the \
 project folder; design_from_project_sheet designs from it or lists the cells to fix.
 Step by step:
@@ -218,6 +219,12 @@ temperatures, personal data blank (the user fills it by hand or in the project s
 template (the sections of resource {SIZING_TEMPLATE_URI}) only when the user gave service or site \
 data.
 
+With microinverters (only when the user asks for them or names one: microinverters ids or \
+"auto"), the engine picks the smallest model whose recommended module power holds the module, the \
+units (free inputs on the last one are a warning), the fewest AC branches and their breakers \
+(NOM 690-8(b) and 240-4(d), the manufacturer's caps on top), and an AC combiner box only when \
+ac_combiner is true. The A3 sheet draws up to 8 microinverters in 3 branches.
+
 Returns the folder, the files, explanation_es (why this inverter: tell the user), bom_text (the \
 installation summary to show), whether AutoCAD was used, and a PNG preview. No configuration that \
 meets the rules is a normal result with the rejections, not an error."""
@@ -276,7 +283,9 @@ Give module, inverters (ids or "auto" for every catalogue inverter), a target \
 (target_dc_power_w, or module_count_min/max) and template: the non-sizing sections of the spec \
 (project with site, utility, ac_bos with panels, main_breakers, meters and point_of_connection, \
 grounding, storage, title_block, layout). See the resource pvsld://examples/sizing-template. \
-The engine fills modules, inverters, strings, circuits, dc_bos and the PV breaker.
+The engine fills modules, inverters, strings, circuits, dc_bos and the PV breaker. With \
+microinverters (ids or "auto", only when the user asks for them) it fills ac_branches (and \
+ac_combiner when asked) instead of strings and dc_bos.
 
 Returns the selected candidate, its complete spec (pass it unchanged to validate_pv_design and \
 generate_single_line_diagram), up to five alternatives, the rejected configurations grouped by \
@@ -631,6 +640,21 @@ def create_server(
             list[str] | Literal["auto"],
             Field(description='Inverter component_ids to evaluate, or "auto" for all.'),
         ] = "auto",
+        microinverters: Annotated[
+            list[str] | Literal["auto"] | None,
+            Field(
+                description="Design with microinverters ONLY when the user asks for them or names "
+                'one: their component_ids, or "auto" for every catalogue microinverter. Default: '
+                "string inverters."
+            ),
+        ] = None,
+        ac_combiner: Annotated[
+            bool,
+            Field(
+                description="Microinverters only, when the user asks for it: the branch breakers "
+                "and an AC SPD in an AC combiner box, one main breaker to the load centre."
+            ),
+        ] = False,
         target_dc_power_w: Annotated[
             float | None, Field(description="DC power to approach, in W (STC).", gt=0)
         ] = None,
@@ -676,7 +700,10 @@ def create_server(
             "dc_ocpd": dc_ocpd,
             "dc_ocpd_device": dc_ocpd_device,
             "layout_template": layout_template,
+            "ac_combiner": ac_combiner,
         }
+        if microinverters is not None:
+            values["microinverters"] = microinverters
         optional = {
             "target_dc_power_w": target_dc_power_w,
             "module_count_min": module_count_min,
@@ -724,6 +751,21 @@ def create_server(
             list[str] | Literal["auto"],
             Field(description='Inverter component_ids to choose from, or "auto" for all.'),
         ] = "auto",
+        microinverters: Annotated[
+            list[str] | Literal["auto"] | None,
+            Field(
+                description="Design with microinverters ONLY when the user asks for them or names "
+                'one: their component_ids, or "auto" for every catalogue microinverter. Default: '
+                "string inverters."
+            ),
+        ] = None,
+        ac_combiner: Annotated[
+            bool,
+            Field(
+                description="Microinverters only, when the user asks for it: the branch breakers "
+                "and an AC SPD in an AC combiner box, one main breaker to the load centre."
+            ),
+        ] = False,
         dc_ocpd_device: Annotated[
             Literal["fuse", "breaker"],
             Field(description="String protection: gPV fuse-disconnector (default) or DC breaker."),
@@ -760,7 +802,10 @@ def create_server(
             "module": module,
             "inverters": inverters,
             "dc_ocpd_device": dc_ocpd_device,
+            "ac_combiner": ac_combiner,
         }
+        if microinverters is not None:
+            values["microinverters"] = microinverters
         optional = {
             "module_count_min": module_count_min,
             "module_count_max": module_count_max,
