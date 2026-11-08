@@ -932,7 +932,36 @@ trunk size and spacing (drawn or default 1.2 m per module), branch / combiner br
 **Status**: Complete (PR #73)
 
 ##### Stage 3.9.5: release 0.8.0
+**Status**: Complete (v0.8.0, 2026-11-07)
+
+#### Stage 3.10: Plugin on par with the editor for microinverters (v0.9.0)
+Owner 2026-11-07: the plugin must match the editor, since a native chatbot in the editor will
+reuse the engine. Decisions: micros only when the user asks or names one; the smallest model whose
+recommended range holds the module power; fewest branches (10 AWG when needed), units spread
+evenly; AC combiner only on request; the sheet draws every module, up to 8 micros in 3 branches;
+free inputs on the last unit with a warning; also draw the per-string DC box.
+
+##### Stage 3.10.1: microinverter sizing
+**Goal**: `size_pv_system` with `microinverters` (ids or "auto") and `ac_combiner`:
+`pvsld.sizing.micro_sizing` picks the model, units, branches, trunks, breakers and home runs and
+validates the 0.2.0 spec; `MicroCandidate` in the result; MCP and CLI texts describe branches.
+**Tests**: tests/test_micro_sizing.py.
 **Status**: In Progress
+
+##### Stage 3.10.2: spec -> editor graph (round trip with graph_to_spec)
+**Status**: Not Started
+
+##### Stage 3.10.3: memoria, BOM and project sheet data with micros
+**Status**: Not Started
+
+##### Stage 3.10.4: A3 sheet drawing with micros and the per-string DC box
+**Status**: Not Started
+
+##### Stage 3.10.5: project sheet (pro mode) with micros
+**Status**: Not Started
+
+##### Stage 3.10.6: skills, MCP tools, release 0.9.0, editor notified
+**Status**: Not Started
 
 ---
 
