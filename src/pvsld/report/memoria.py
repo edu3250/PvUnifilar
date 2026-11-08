@@ -134,6 +134,24 @@ def _raceway_owner(spec: PvSystemSpec, circuit: Circuit) -> Circuit:
     return next(c for c in spec.circuits if c.id == circuit.raceway.ref)
 
 
+def general_rows(spec: PvSystemSpec) -> list[tuple[str, str]]:
+    """Project, standard, location, service, owner, scheme, responsible and date."""
+    return [
+        ("Proyecto", spec.project.name),
+        ("Norma", spec.standards.nom_edition),
+        ("Ubicación", _location(spec)),
+        (
+            "Servicio",
+            f"{spec.utility.supplier} {spec.utility.system} "
+            f"{_g(spec.utility.nominal_voltage_v)} V, tarifa {spec.utility.tariff}",
+        ),
+        ("Propietario", _owner(spec)),
+        ("Esquema", "Medición neta, conexión del lado de la carga"),
+        ("Responsable", _responsible(spec)),
+        ("Fecha", spec.title_block.date.strftime("%d/%m/%Y")),
+    ]
+
+
 def build_memoria(
     spec: PvSystemSpec,
     derived: Derived,
@@ -142,7 +160,17 @@ def build_memoria(
     explanation_es: str = "",
     assumptions: Sequence[str] = (),
 ) -> Memoria:
-    """The rows of the calculation report for ``spec`` (one inverter, its first string type)."""
+    """The rows of the calculation report for ``spec`` (one inverter, its first string type).
+
+    A microinverter design (``ac_branches``) takes the rows of
+    :func:`pvsld.report.memoria_micro.build_micro_memoria`.
+    """
+    if spec.ac_branches:
+        from pvsld.report.memoria_micro import build_micro_memoria
+
+        return build_micro_memoria(
+            spec, derived, findings, explanation_es=explanation_es, assumptions=assumptions
+        )
     tables = get_tables(spec.standards.nom_edition)
     module, inv, string = spec.modules[0], spec.inverters[0], spec.strings[0]
     sv = derived.strings[0]
@@ -164,20 +192,7 @@ def build_memoria(
             f"Sistema fotovoltaico interconectado de {kwp:.2f} kWp — "
             f"{sum(s.n_series for s in spec.strings)} módulos {m_name} + {i_name}"
         ),
-        general=[
-            ("Proyecto", spec.project.name),
-            ("Norma", spec.standards.nom_edition),
-            ("Ubicación", _location(spec)),
-            (
-                "Servicio",
-                f"{spec.utility.supplier} {spec.utility.system} "
-                f"{_g(spec.utility.nominal_voltage_v)} V, tarifa {spec.utility.tariff}",
-            ),
-            ("Propietario", _owner(spec)),
-            ("Esquema", "Medición neta, conexión del lado de la carga"),
-            ("Responsable", _responsible(spec)),
-            ("Fecha", spec.title_block.date.strftime("%d/%m/%Y")),
-        ],
+        general=general_rows(spec),
         equipment=[
             (
                 f"Módulo FV — {m_name}",
