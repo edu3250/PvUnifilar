@@ -954,10 +954,16 @@ catalogue references recovered from manufacturer and model, circuit data on the 
 each path) and the template of the undrawn sections; `graph_to_spec` gives the same design back
 for string inverters (shared and per-string DC box), microinverters and the AC combiner.
 **Tests**: tests/test_graph_export.py.
-**Status**: In Progress
+**Status**: Complete (PR #76)
 
 ##### Stage 3.10.3: memoria, BOM and project sheet data with micros
-**Status**: Not Started
+**Goal**: `pvsld.report.memoria_micro.build_micro_memoria` (module on each input, each branch:
+current, breaker, trunk limit, manufacturer cap, home-run ampacity, daisy-chain drop in closed
+form, kAIC; combiner main; 120 % busbar), the BOM with modules on micro inputs, units, trunk cable,
+junction boxes and combiner; the project sheet no longer fails on a micro design (its micro rows
+come with the pro mode, 3.10.5).
+**Tests**: tests/test_micro_report.py (every Excel formula re-evaluated against the Python value).
+**Status**: In Progress
 
 ##### Stage 3.10.4: A3 sheet drawing with micros and the per-string DC box
 **Status**: Not Started

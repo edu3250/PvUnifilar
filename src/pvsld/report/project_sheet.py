@@ -107,9 +107,10 @@ def _rows(
         )
         return f'{_g(r.trade_size_mm)} mm ({trade}")' if trade else f"{_g(r.trade_size_mm)} mm"
 
-    n_modules = sum(x.n_series for x in s.strings) if s else 10
-    n_strings = len(s.strings) if s else None
-    n_series = s.strings[0].n_series if s else None
+    micro_inputs = sum(len(u.inputs) for b in s.ac_branches for u in b.microinverters) if s else 0
+    n_modules = sum(x.n_series for x in s.strings) + micro_inputs if s else 10
+    n_strings = len(s.strings) if s and s.strings else None
+    n_series = s.strings[0].n_series if s and s.strings else None
     ratio = derived.dc_ac_ratio if derived else None
     return {
         "Proyecto": [
