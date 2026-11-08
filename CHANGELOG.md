@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-08
+
 ### Added
 
 - MCP tools `size_pv_system` and `design_and_draw` accept `microinverters` (ids or "auto"; only when the user asks for them) and `ac_combiner`; the server instructions, the `diagrama`, `pro` and `catalogo` skills and the user guide explain when to use microinverters and the owner's datasheet criteria for adding one.

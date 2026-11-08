@@ -989,7 +989,7 @@ micro or trunk cell; an older sheet without the rows stays a string design.
 **Goal**: `microinverters` / `ac_combiner` on the MCP sizing and design tools; server instructions,
 skills (diagrama, pro, catalogo), README and user guide; then release 0.9.0 and notify the editor.
 **Tests**: tests/test_mcp_micro.py.
-**Status**: In Progress
+**Status**: Complete (PR #82); release 0.9.0 in progress
 
 ---
 
