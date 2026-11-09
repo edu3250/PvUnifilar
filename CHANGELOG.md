@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Palette: the `pv_module` type marks its `POS` port optional (`required: false`); a module on a microinverter input is drawn with one line from `NEG`, as on the sheet (editor request, approved by the owner 2026-11-08). The library block is unchanged; `_TypeDef.optional_ports` carries such palette-only flags.
+
 ## [0.9.0] - 2026-11-08
 
 ### Added
