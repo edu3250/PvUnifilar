@@ -107,3 +107,6 @@ datasheets/cache/
 
 # The owner's source templates stay local; the neutral DXF of `pvsld sheet import` is committed
 sheet_templates/*.dwg
+
+# Local guides for Claude chats (owner request 2026-11-13): never committed
+docs/local/
