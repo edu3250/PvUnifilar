@@ -373,6 +373,7 @@ class _TypeDef:
         derived_fields: tuple[str, ...] = (),
         poles_by_dc_system: dict[str, int] | None = None,
         variants: tuple[str, ...] = (),
+        optional_ports: tuple[str, ...] = (),
     ) -> None:
         self.type_id = type_id
         self.label_es = label_es
@@ -385,6 +386,9 @@ class _TypeDef:
         self.derived_fields = derived_fields
         self.poles_by_dc_system = poles_by_dc_system
         self.variants = variants
+        self.optional_ports = optional_ports
+        """Ports this type leaves free on purpose (the palette marks them not required; the
+        library block is unchanged)."""
 
 
 def _rule(pattern: str, description_es: str, context: str = "default") -> NamingRule:
@@ -408,6 +412,9 @@ TYPES: tuple[_TypeDef, ...] = (
         "pv_module",
         "Módulo fotovoltaico (en la entrada de un microinversor)",
         "PVSLD_PV_MODULE",
+        # One line to the micro input from NEG, as the sheet draws it; POS stays free (editor
+        # request approved by the owner, 2026-11-08).
+        optional_ports=("POS",),
         component_types=("pv_module",),
         spec_section="ac_branches[].microinverters[].inputs",
         naming=(_rule("M{n}", "M1, M2... (un módulo por entrada del microinversor)"),),
@@ -699,8 +706,13 @@ def _anchors(spec: SymbolSpec) -> tuple[PortModel, ...]:
     )
 
 
-def _symbol_model(spec: SymbolSpec, *, add_anchors: bool) -> SymbolModel:
-    ports = tuple(PortModel(**asdict(port)) for port in spec.ports)
+def _symbol_model(
+    spec: SymbolSpec, *, add_anchors: bool, optional_ports: tuple[str, ...] = ()
+) -> SymbolModel:
+    ports = tuple(
+        PortModel(**{**asdict(port), "required": port.required and port.id not in optional_ports})
+        for port in spec.ports
+    )
     if add_anchors and not ports:
         ports = _anchors(spec)
     return SymbolModel(
@@ -761,7 +773,11 @@ def _type_descriptor(definition: _TypeDef) -> TypeDescriptor:
         "naming": definition.naming,
         "derived_fields": definition.derived_fields,
         "poles_by_dc_system": definition.poles_by_dc_system,
-        "symbol": _symbol_model(get_symbol(definition.block), add_anchors=True),
+        "symbol": _symbol_model(
+            get_symbol(definition.block),
+            add_anchors=True,
+            optional_ports=definition.optional_ports,
+        ),
         "symbol_variants": tuple(
             _symbol_model(get_symbol(name), add_anchors=False) for name in definition.variants
         ),
