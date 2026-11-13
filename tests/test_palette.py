@@ -1,6 +1,7 @@
 """Palette descriptors for the editor (ENG-001, Stage 3.8.1)."""
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -49,7 +50,12 @@ def test_types_are_the_ones_the_engine_calculates(palette: Palette) -> None:
 @pytest.mark.parametrize("definition", TYPES, ids=lambda t: t.type_id)
 def test_symbol_round_trips_to_the_library_block(palette: Palette, definition) -> None:
     descriptor = palette.type(definition.type_id)
-    assert symbol_from_descriptor(descriptor.symbol) == get_symbol(definition.block)
+    library = get_symbol(definition.block)
+    rebuilt = symbol_from_descriptor(descriptor.symbol)
+    # Only the required flag of the type's optional ports differs from the library block.
+    assert replace(rebuilt, ports=library.ports) == library
+    for ours, theirs in zip(rebuilt.ports, library.ports, strict=True):
+        assert replace(ours, required=theirs.required) == theirs
 
 
 @pytest.mark.parametrize("definition", TYPES, ids=lambda t: t.type_id)
@@ -57,7 +63,15 @@ def test_ports_match_the_library(palette: Palette, definition) -> None:
     library = get_symbol(definition.block)
     ports = [p for p in palette.type(definition.type_id).symbol.ports if not p.anchor_only]
     assert [(p.id, p.x, p.y, p.direction, p.kind, p.required) for p in ports] == [
-        (p.id, p.x, p.y, p.direction, p.kind, p.required) for p in library.ports
+        (
+            p.id,
+            p.x,
+            p.y,
+            p.direction,
+            p.kind,
+            p.required and p.id not in definition.optional_ports,
+        )
+        for p in library.ports
     ]
 
 
@@ -147,3 +161,9 @@ def test_microinverters_name_their_symbol_variant(palette: Palette) -> None:
     module = next(e for e in palette.equipment if e.component_type == "pv_module")
     assert module.type_id == "pv_string"  # the module on a micro input takes the same records
     assert palette.type("pv_module").component_types == ("pv_module",)
+
+
+def test_a_module_on_a_micro_input_leaves_pos_free(palette: Palette) -> None:
+    ports = {p.id: p.required for p in palette.type("pv_module").symbol.ports}
+    assert ports == {"POS": False, "NEG": True}
+    assert get_symbol("PVSLD_PV_MODULE").port("POS").required  # the library block is unchanged
