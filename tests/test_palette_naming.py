@@ -48,6 +48,7 @@ def test_every_type_has_a_naming_rule(palette) -> None:
         "default",
         "service_main",
         "micro_branch",
+        "inverter_combiner",
     }
 
 

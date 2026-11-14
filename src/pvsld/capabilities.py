@@ -130,6 +130,19 @@ CAPABILITIES: tuple[Capability, ...] = (
         "de conexiones, ITM de rama y caja combinadora; hasta 8 microinversores en 3 ramas.",
     ),
     Capability(
+        "inverters.breakers",
+        "Protección de CA de los inversores",
+        "supported",
+        "ITM compartido (caja de unión), un ITM por inversor en el centro de carga (cada uno es "
+        "I1) o tablero combinador con un ITM por inversor y un ITM general (I1, CMB-001).",
+    ),
+    Capability(
+        "drawing.inverter_breakers",
+        "Plano con un ITM por inversor o tablero combinador",
+        "pending",
+        "La plantilla A3 todavía dibuja solo el ITM compartido.",
+    ),
+    Capability(
         "service.no_load_centre",
         "Conexión sin centro de carga",
         "supported",

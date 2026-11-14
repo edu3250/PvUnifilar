@@ -1078,7 +1078,7 @@ right; `PVSLD_INV` unchanged); palette inverter variants and each model's `block
 capabilities `inverter_dc_ports` A-D, `max_strings_per_inverter` 4; the DC box with up to 4
 strings (A, B, C, D order); the A3 sheet refuses C and D with a clear message.
 **Tests**: tests/test_four_mppt.py (4-MPPT and 3-MPPT test copies of a catalogue record).
-**Status**: In Progress
+**Status**: Complete (PR #137)
 
 ##### Stage 3.13.2: three-phase service (engine and editor)
 **Goal**: 3F-4H 220/127 V in the editor's drawings (`SERVICE_PHASES`; the sizing engine keeps
@@ -1089,8 +1089,20 @@ phases + neutral (ccc 3) and the sqrt(3) drop; new rule SRV-001 (three-phase inv
 single-phase service: error; single-phase inverter on 3F-4H: imbalance warning); the palette
 marks three-phase inverters designable; micros on 3F-4H stay unsupported.
 **Tests**: tests/test_three_phase.py (Solis S5-GC 20 kW, 3 MPPT).
-**Status**: In Progress
+**Status**: Complete (PR #138)
 
+
+#### Stage 3.14: a breaker per inverter or an AC combiner of inverters (approved 2026-11-14)
+**Goal**: besides the shared breaker, each string inverter to its own breaker in the load centre
+(each an I1, owner option a; PCC-002 sums them) or to its breaker inside an AC combiner group
+(role other, at the combiner) whose main breaker outside it is the I1 at 1.25 x the sum of the
+currents (new rule CMB-001; the combiner's AC SPD optional) and feeds the load centre through
+C-CCA. `PvSystemSpec.inverter_breakers` / `combiner_current_a`; `evaluate_choices` checks every
+inverter breaker; the micro combiner model is reused; `spec_to_graph` round trip; naming
+`ITM-INV{n}`; capabilities `inverters.breakers` supported, `drawing.inverter_breakers` pending
+(the A3 sheet refuses them).
+**Tests**: tests/test_inverter_breakers.py.
+**Status**: In Progress
 ---
 
 **Phase 3 Status Summary:** Paused (owner, 2026-10-07). Open items:

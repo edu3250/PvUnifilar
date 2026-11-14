@@ -23,6 +23,7 @@ SUBSET = (
     "DIS-003",
     "DIS-004",
     "DIS-005",
+    "CMB-001",
     "SRV-001",
 )
 # Microinverter rules of schema 0.2.0 (Stage 3.9.3), after the S1 subset.
@@ -43,7 +44,7 @@ MICRO = (
 )
 # STR-007 and CON-006 have no Mexican checklist item in the vault ("MX" column is "—"), nor do
 # the microinverter rules (equipment and installation-manual limits).
-NO_CHECKLIST_ITEM = {"STR-007", "CON-006", "SRV-001", *MICRO}
+NO_CHECKLIST_ITEM = {"STR-007", "CON-006", "CMB-001", "SRV-001", *MICRO}
 
 
 def _ids(report: ValidationReport, severity: Severity | None = None) -> list[str]:

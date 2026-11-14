@@ -807,11 +807,7 @@ class _Evaluator:
         if combiner is None:
             return
         ocpd = next(o for o in spec.ac_bos.ocpds if o.id == combiner.main_ocpd)
-        inverters = {i.id: i for i in spec.inverters}
-        current = sum(
-            len(b.microinverters) * inverters[b.microinverters[0].inverter].iac_max_a
-            for b in spec.ac_branches
-        )
+        current = spec.combiner_current_a()
         minimum = calc.ocpd_min_a(current)
         standard = calc.next_standard_ocpd_a(minimum, self.tables)
         fault = spec.utility.available_fault_current_ka
@@ -885,17 +881,20 @@ class _Evaluator:
         )
 
     def itm(self) -> None:
+        """Each breaker of the string inverters: one shared, one per inverter, or the inverter
+        breakers of an AC combiner (Stage 3.14): 1.25 x the currents it protects."""
         spec = self.spec
-        if spec.ac_branches:
+        if spec.ac_branches or not spec.string_inverters():
             return  # the branch breakers are checked by branch_breakers()
-        position = spec.inverter_breaker_id()
+        for position, inverters in spec.inverter_breakers().items():
+            self._itm(position, inverters)
+
+    def _itm(self, position: str, inverters: list[Any]) -> None:
+        spec = self.spec
         ocpd = next((o for o in spec.ac_bos.ocpds if o.id == position), None)
-        if ocpd is None or not spec.inverters:
+        if ocpd is None:
             return
-        inverters = spec.string_inverters()
-        if not inverters:
-            return
-        # One breaker for every string inverter (owner 2026-11-13): 1.25 x the sum of currents.
+        # One breaker for its inverters (owner 2026-11-13): 1.25 x the sum of their currents.
         iac_a = sum(i.iac_max_a for i in inverters)
         fault = spec.utility.available_fault_current_ka
         phases = max(i.phases for i in inverters)  # the breaker opens every live conductor
@@ -1083,9 +1082,14 @@ class _Evaluator:
                 )
                 limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
             elif spec.ac_combiner is not None and source == spec.ac_combiner.id:
-                micro = inverters[spec.ac_branches[0].microinverters[0].inverter]
-                drop = lambda size, i=micro, m=length, a=cv.i_max_a: calc.voltage_drop_ac_pct(  # noqa: E731
-                    size, m, a, i.vac_v, 2, self.tables
+                fleet = (
+                    [inverters[spec.ac_branches[0].microinverters[0].inverter]]
+                    if spec.ac_branches
+                    else spec.string_inverters()
+                )
+                wires = 2 if spec.ac_branches else max(i.phases for i in fleet)
+                drop = lambda size, i=fleet[0], m=length, a=cv.i_max_a, w=wires: (  # noqa: E731
+                    calc.voltage_drop_ac_pct(size, m, a, i.vac_v, w, self.tables)
                 )
                 limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
             elif source in junctions:

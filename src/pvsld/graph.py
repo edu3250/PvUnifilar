@@ -340,6 +340,10 @@ class _Builder:
         self.net_cache: _Net | None = None
         self.cable_index = {id(cable): index for index, cable in enumerate(graph.cables)}
         self.circuit_cables: list[CircuitCables] = []
+        self.breaker_of: dict[str, str] = {}
+        """The breaker each string inverter's output reaches first."""
+        self.inverter_box: tuple[str, str, str] | None = None
+        """An AC combiner of string inverters: (group id, first inverter breaker, main)."""
 
     def indices(self, cables: Iterable[GraphCable]) -> tuple[int, ...]:
         return tuple(self.cable_index[id(c)] for c in cables)
@@ -757,13 +761,33 @@ def _ac_side(
             )
             continue
         shared.setdefault(hit[0], []).append(node.id)
-    if len(shared) > 1:
-        fed_by = "; ".join(f"{itm_id}: {', '.join(ids)}" for itm_id, ids in shared.items())
+    b.breaker_of = {inv: itm_id for itm_id, ids in shared.items() for inv in ids}
+    # A breaker per inverter in the load centre, or the inverter breakers of an AC combiner
+    # (Stage 3.14, owner 2026-11-14): each inverter breaker is an I1, the combiner's main is.
+    groups = {
+        itm_id: b.group_of[itm_id]
+        for itm_id in shared
+        if itm_id in b.group_of and b.nodes[b.group_of[itm_id]].type == AC_GROUP_TYPE
+    }
+    box_id = next(iter(groups.values()), None)
+    if groups and (set(groups) != set(shared) or len(set(groups.values())) > 1):
         b.issue(
             "unsupported",
-            f"Los inversores llegan a ITM distintos ({fed_by}); por ahora todos los inversores "
-            "de cadena se unen en un solo ITM compartido.",
-            *(i for ids in shared.values() for i in ids),
+            "Los ITM de los inversores deben ir todos sueltos en el centro de carga o todos en un "
+            "mismo tablero combinador.",
+            *shared,
+        )
+        box_id = None
+    if (
+        len(shared) > 1
+        and box_id is None
+        and not any(n.type == "load_centre" for n in b.nodes.values())
+    ):
+        b.issue(
+            "unsupported",
+            "Los inversores llegan a ITM distintos sin centro de carga; por ahora un ITM por "
+            "inversor va en el centro de carga (o use un ITM compartido o un tablero combinador).",
+            *shared,
         )
     for itm_id, fed in shared.items():
         inverter_breakers.append(itm_id)
@@ -810,6 +834,10 @@ def _ac_side(
                     "Capacidad interruptiva del interruptor del catálogo.",
                 )
         b.mapped[itm.id] = f"ac_bos.ocpds[{index}]"
+        if box_id is not None:  # an inverter breaker of the combiner: a protection, not I1
+            entry["role"] = "other"
+            entry["at"] = box_id
+            continue
         # The load centre it feeds is the point of connection.
         order, _parent = net.trace(f"{itm.id}.OUT")
         panel_nodes = [
@@ -852,6 +880,26 @@ def _ac_side(
         poc.setdefault("id", "PI-1")
         poc.setdefault("type", "load_side")
 
+    if box_id is not None and shared:
+        main_id = _inverter_box(
+            b,
+            net,
+            spec,
+            ac,
+            box_id,
+            sorted(shared),
+            breakers,
+            ocpds,
+            upsert,
+            poc,
+            phases,
+            tables,
+            utility,
+        )
+        if main_id is not None:
+            inverter_breakers.append(main_id)
+    elif len(shared) > 1 and poc.get("panel"):
+        poc["breaker"] = sorted(shared)[0]  # one breaker per inverter: the first names the PI
     for node in (n for n in b.nodes.values() if n.type == "load_centre"):
         index = upsert(panels, node)
         if utility is not None:
@@ -914,6 +962,105 @@ def _ac_side(
 
 
 _MAIN_FIELDS = frozenset(MainBreaker.model_fields)
+
+
+def _inverter_box(
+    b: _Builder,
+    net: _Net,
+    spec: dict[str, Any],
+    ac: dict[str, Any],
+    box_id: str,
+    inside: list[str],
+    breakers: Mapping[str, GraphNode],
+    ocpds: list[dict[str, Any]],
+    upsert: Any,
+    poc: dict[str, Any],
+    phases: int,
+    tables: Any,
+    utility: Utility | None,
+) -> str | None:
+    """The AC combiner of string inverters: its main breaker (the first one outside it on the
+    way to the load centre) is I1 at 1.25 x every inverter's current; its AC SPD."""
+    children = {c.id for c in b.nodes[box_id].children}
+    order, _parent = net.trace(f"{inside[0]}.OUT")
+    main_id = next(
+        (
+            p.split(".", 1)[0]
+            for p in order
+            if p.split(".", 1)[0] in breakers and p.split(".", 1)[0] not in children
+        ),
+        None,
+    )
+    if main_id is None:
+        b.issue(
+            "topology",
+            f"El tablero combinador {box_id} no llega a ningún ITM general hacia el centro de "
+            "carga.",
+            box_id,
+        )
+        return None
+    fleet = [i for i in spec["inverters"] if i["id"] in b.breaker_of]
+    index = upsert(ocpds, breakers[main_id])
+    entry = ocpds[index]
+    entry["role"] = "I1"
+    entry["backfed"] = True
+    entry.setdefault("poles", max((i["phases"] for i in fleet), default=phases))
+    entry.setdefault("voltage_v", AC_BREAKER_VOLTAGE_V)
+    if "rating_a" not in entry:
+        rating = bos.ac_ocpd_rating_a(sum(i["iac_max_a"] for i in fleet), tables)
+        choice, _found = bos.select_ac_breaker(
+            position=main_id,
+            rating_a=rating,
+            poles=entry["poles"],
+            voltage_v=AC_BREAKER_VOLTAGE_V,
+            fault_ka=utility.available_fault_current_ka if utility else 0.0,
+            breakers=b.registry.ac_breakers(),
+        )
+        entry["rating_a"] = b.fill(
+            f"ac_bos.ocpds[{index}].rating_a",
+            choice.rating_a if choice else rating,
+            "ITM general del tablero combinador: 1.25 × la suma de las corrientes de los "
+            "inversores, siguiente valor normalizado.",
+        )
+        if choice is not None and "model" not in entry:
+            entry["model"] = b.fill(
+                f"ac_bos.ocpds[{index}].model", choice.device_id, "Interruptor del catálogo."
+            )
+        if "kaic_ka" not in entry:
+            entry["kaic_ka"] = b.fill(
+                f"ac_bos.ocpds[{index}].kaic_ka",
+                choice.interrupting_ka
+                if choice
+                else (utility.available_fault_current_ka if utility else None),
+                "Capacidad interruptiva del interruptor del catálogo.",
+            )
+    b.mapped[main_id] = f"ac_bos.ocpds[{index}]"
+    order, _parent = net.trace(f"{main_id}.OUT")
+    panel = next((p.split(".", 1)[0] for p in order if net.node_of(p).type == "load_centre"), None)
+    if panel is None:
+        b.issue(
+            "unsupported",
+            f"Por ahora el tablero combinador {box_id} necesita llegar a un centro de carga.",
+            box_id,
+        )
+    else:
+        entry["at"] = panel
+        poc.update({"panel": panel, "breaker": main_id})
+        poc.setdefault("id", "PI-1")
+        poc.setdefault("type", "load_side")
+    spds = [c for c in b.nodes[box_id].children if c.type == "ac_spd"]
+    template_spds = [s for s in (ac.get("spds") or []) if s.get("id") not in {c.id for c in spds}]
+    ac["spds"] = template_spds + [{**spd.values, "id": spd.id, "at": box_id} for spd in spds]
+    for offset, spd in enumerate(spds):
+        b.mapped[spd.id] = f"ac_bos.spds[{len(template_spds) + offset}]"
+    for child in b.nodes[box_id].children:
+        if child.type in WIRING_TYPES:
+            b.mapped.setdefault(child.id, "wiring")
+    spec["ac_combiner"] = {"id": box_id, "main_ocpd": main_id, "spd": spds[0].id if spds else None}
+    b.mapped[box_id] = "ac_combiner"
+    b.inverter_box = (box_id, inside[0], main_id)
+    spec["schema_version"] = max(spec["schema_version"], SERVICE_SCHEMA_VERSION)
+    return main_id
 
 
 def _reindexed_path(path: str, section: str, moved: Mapping[int, int]) -> str:
@@ -1123,7 +1270,11 @@ def _circuits(
         else {}
     )
     string_inverters = [i for i in spec["inverters"] if i["id"] in inverters]
-    if itm and itm_id and string_inverters:
+    if string_inverters and (
+        b.inverter_box is not None or len({b.breaker_of.get(i["id"]) for i in string_inverters}) > 1
+    ):
+        _breaker_circuits(b, circuits, ac, string_inverters, inverters, t_amb, standards, tables)
+    elif itm and itm_id and string_inverters:
         runs = _inverter_runs(b, [i["id"] for i in string_inverters], itm_id)
         if runs.junction is not None:
             junctions = [j for j in ac.get("junction_boxes") or [] if j.get("id") != runs.junction]
@@ -1340,6 +1491,71 @@ def _inverter_circuit(
         )
     circuits.append(circuit)
     b.circuit_cables.append(CircuitCables(cid, "inverter_output", source, to, b.indices(path)))
+
+
+def _breaker_circuits(
+    b: _Builder,
+    circuits: list[dict[str, Any]],
+    ac: Mapping[str, Any],
+    string_inverters: list[dict[str, Any]],
+    inverters: Mapping[str, CatalogueInverter],
+    t_amb: float | None,
+    standards: Standards,
+    tables: Any,
+) -> None:
+    """A breaker per inverter (or the inverter breakers of an AC combiner): each inverter's run
+    ``C-INV<n>`` to its own breaker, and the combiner output ``C-CCA`` to its main breaker."""
+    ratings = {o.get("id"): o.get("rating_a") for o in ac.get("ocpds") or []}
+    single = len(string_inverters) == 1
+    for number, inverter in enumerate(string_inverters, start=1):
+        target = b.breaker_of.get(inverter["id"])
+        if target is None:
+            continue
+        _inverter_circuit(
+            b,
+            circuits,
+            cid="C-INV" if single else f"C-INV{number}",
+            source=f"{inverter['id']}.ac",
+            to=target,
+            path=_inverter_path(b, inverter["id"], target),
+            current=inverters[inverter["id"]].max_ac_output_current_a,
+            voltage_v=inverter["vac_v"],
+            ocpd_a=ratings.get(target),
+            default_m=DEFAULTS.ac_output_length_m,
+            owner=inverter["id"],
+            t_amb=t_amb,
+            standards=standards,
+            phases=inverter["phases"],
+            tables=tables,
+        )
+    if b.inverter_box is None or b.net_cache is None:
+        return
+    box_id, first, main_id = b.inverter_box
+    children = {c.id for c in b.nodes[box_id].children}
+    _order, parent = b.net_cache.trace(f"{first}.OUT")
+    end = next((f"{main_id}.{p}" for p in ("IN", "OUT") if f"{main_id}.{p}" in parent), None)
+    path = [
+        c
+        for c in (_path(parent, end) if end else [])
+        if not all(e.split(".", 1)[0] in children for e in (c.from_, c.to))
+    ]
+    _inverter_circuit(
+        b,
+        circuits,
+        cid="C-CCA",
+        source=box_id,
+        to=main_id,
+        path=path,
+        current=sum(inverters[i["id"]].max_ac_output_current_a for i in string_inverters),
+        voltage_v=string_inverters[0]["vac_v"],
+        ocpd_a=ratings.get(main_id),
+        default_m=DEFAULTS.ac_output_length_m,
+        owner=box_id,
+        t_amb=t_amb,
+        standards=standards,
+        phases=max(i["phases"] for i in string_inverters),
+        tables=tables,
+    )
 
 
 def inverter_breaker_id(ac: Mapping[str, Any]) -> str | None:
