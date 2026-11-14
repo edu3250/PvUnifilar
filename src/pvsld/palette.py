@@ -819,13 +819,7 @@ def _equipment(components: Iterable[Component]) -> tuple[EquipmentEntry, ...]:
         if type_id is None:  # conductors are wires, not palette items
             continue
         source = component.source
-        grid = getattr(component, "grid", "single_phase")
-        blocked = (
-            f"Inversor {'trifásico' if grid == 'three_phase' else grid}: por ahora el motor solo "
-            "diseña servicios monofásicos."
-            if grid != "single_phase"
-            else None
-        )
+        blocked = None  # three-phase inverters are designable since Stage 3.13.2
         entries.append(
             EquipmentEntry(
                 component_id=component.component_id,

@@ -11,6 +11,7 @@ from pvsld.capabilities import MAX_STRINGS, capabilities
 from pvsld.catalogue import ComponentRegistry
 from pvsld.cli import main
 from pvsld.core.draft import evaluate_draft
+from pvsld.core.validation import validate_pv_design
 from pvsld.graph import graph_to_spec
 from pvsld.resources import data_path
 from pvsld.sizing import size_pv_system
@@ -306,8 +307,13 @@ def test_shared_dc_raceway_with_different_sizes(graph, template, registry) -> No
     assert result.spec["circuits"][0]["raceway"]["trade_size_mm"] == 41
 
 
-def test_three_phase_inverter_is_unsupported(graph, template, registry) -> None:
+def test_a_three_phase_inverter_on_a_single_phase_service_is_srv_001(
+    graph, template, registry
+) -> None:
+    # Designable since Stage 3.13.2 (tests/test_three_phase.py); on this 2F-3H service the
+    # rule pack reports it.
     graph["nodes"][3]["values"]["model"] = "SOLIS-S5-GC20K-LV"
     result = graph_to_spec(graph, template, registry=registry)
-    assert any(i.code == "unsupported" and "INV1" in i.node_ids for i in result.issues)
-    assert result.spec["inverters"] == []
+    assert result.spec["inverters"][0]["phases"] == 3
+    findings = validate_pv_design(result.spec).findings
+    assert any(f.rule_id == "SRV-001" and f.severity.value == "E" for f in findings)

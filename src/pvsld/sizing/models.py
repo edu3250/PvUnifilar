@@ -36,7 +36,23 @@ REQUIRED_TEMPLATE_KEYS = (
     "layout",
 )
 SUPPORTED_SYSTEMS = {"1F-2H": 1, "2F-3H": 2}
-"""Utility systems of this version (single phase, 127 V line-neutral or 220 V line-line)."""
+"""Utility systems the sizing engine designs (single phase, 127 V line-neutral or 220 V
+line-line); the editor's drawings also take 3F-4H (:data:`SERVICE_PHASES`)."""
+SERVICE_PHASES = {"1F-2H": 1, "2F-3H": 2, "3F-4H": 3}
+"""Energized conductors of each low-voltage service (owner 2026-11-14: 3F-4H 220/127 V)."""
+
+
+def inverter_phases(system: str, three_phase: bool, line_to_line: bool = True) -> int:
+    """Energized conductors of an inverter on ``system``: 3 for a three-phase inverter; a
+    single-phase one is L-N on 1F-2H, L-L on 2F-3H, and on 3F-4H L-L (two phases) when it runs
+    at the service voltage, else L-N (owner decision 2026-11-14, with an imbalance warning)."""
+    if three_phase:
+        return 3
+    if system == "1F-2H":
+        return 1
+    if system == "3F-4H" and not line_to_line:
+        return 1
+    return 2
 
 
 class SizingInputError(ValueError):

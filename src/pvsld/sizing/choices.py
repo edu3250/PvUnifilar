@@ -72,7 +72,7 @@ from pvsld.sizing.engine import (
     STRING_BREAKER_PREFIX,
     STRING_FUSE_PREFIX,
 )
-from pvsld.sizing.models import SUPPORTED_SYSTEMS, Issue
+from pvsld.sizing.models import Issue
 
 
 @dataclass(frozen=True)
@@ -895,11 +895,10 @@ class _Evaluator:
         inverters = spec.string_inverters()
         if not inverters:
             return
-        inverter = inverters[0]
         # One breaker for every string inverter (owner 2026-11-13): 1.25 x the sum of currents.
         iac_a = sum(i.iac_max_a for i in inverters)
         fault = spec.utility.available_fault_current_ka
-        phases = SUPPORTED_SYSTEMS.get(spec.utility.system, inverter.phases)
+        phases = max(i.phases for i in inverters)  # the breaker opens every live conductor
         minimum = calc.ocpd_min_a(iac_a)
         standard = bos.ac_ocpd_rating_a(iac_a, self.tables)
         choice, found = bos.select_ac_breaker(
