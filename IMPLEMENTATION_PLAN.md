@@ -1063,6 +1063,24 @@ strings on one is refused with a clear message.
 **Status**: In Progress
 
 ##### Stage 3.12.4: plugin (MCP, skills, pro mode), then 3.11.2 and release 0.10.0
+**Status**: Not Started (owner 2026-11-14: engine limitations for the editor first)
+
+#### Stage 3.13: up to 4 MPPT and three-phase service (approved by the owner 2026-11-14)
+Owner 2026-11-14: inputs C and D on top of the inverter (A and B stay left), one string per MPPT;
+two strings in parallel on one input stays apart; three-phase 3F-4H 220/127 V with three-phase
+inverters, and single-phase inverters on 3F-4H allowed with an imbalance warning (option a); no
+3-pole breaker in the catalogue: the ITM keeps its rating without a catalogue model. Sizing and
+the A3 sheet come later with the plugin work.
+
+##### Stage 3.13.1: up to 4 MPPT (engine and editor)
+**Goal**: generated symbols `PVSLD_INV_3MPPT` / `PVSLD_INV_4MPPT` (C, D on top, texts at the upper
+right; `PVSLD_INV` unchanged); palette inverter variants and each model's `block`; graph ports A-D;
+capabilities `inverter_dc_ports` A-D, `max_strings_per_inverter` 4; the DC box with up to 4
+strings (A, B, C, D order); the A3 sheet refuses C and D with a clear message.
+**Tests**: tests/test_four_mppt.py (4-MPPT and 3-MPPT test copies of a catalogue record).
+**Status**: In Progress
+
+##### Stage 3.13.2: three-phase service (engine and editor)
 **Status**: Not Started
 
 ---

@@ -57,6 +57,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from pvsld.capabilities import INVERTER_DC_PORTS
 from pvsld.catalogue import ComponentRegistry, Microinverter, UnknownComponentError
 from pvsld.catalogue import Inverter as CatalogueInverter
 from pvsld.catalogue import PVModule as CatalogueModule
@@ -234,7 +235,7 @@ class GraphResult:
 _SWITCH_PORT = re.compile(r"^(IN|OUT)(\d*)$")
 _PORTS: dict[str, frozenset[str]] = {
     "pv_string": frozenset({"OUT"}),
-    "inverter": frozenset({"A", "B", "AC", "PE"}),
+    "inverter": frozenset({"A", "B", "C", "D", "AC", "PE"}),
     "dc_fuse_holder": frozenset({"IN", "OUT"}),
     "dc_breaker": frozenset({"IN", "OUT"}),
     "dc_spd": frozenset({"L", "L1", "L2", "PE"}),
@@ -577,7 +578,7 @@ def graph_to_spec(
         reached = [
             p
             for p in order
-            if net.node_of(p).type == "inverter" and p.split(".", 1)[1] in ("A", "B")
+            if net.node_of(p).type == "inverter" and p.split(".", 1)[1] in INVERTER_DC_PORTS
         ]
         on_path[node.id] = {
             p.split(".", 1)[0] for p in order if net.node_of(p).type != "inverter"

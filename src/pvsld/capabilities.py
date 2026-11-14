@@ -15,11 +15,11 @@ FORMAT = "pvsld.capabilities/1"
 
 MAX_INVERTERS: int | None = None
 """No limit on string inverters per design (owner 2026-11-13; they share one breaker)."""
-MAX_STRINGS = 2
-"""Strings per string inverter (one on each of its inputs A and B)."""
+MAX_STRINGS = 4
+"""Strings per string inverter: one on each MPPT input, A to D (owner 2026-11-14)."""
 SUPPORTED_INVERTER_TYPES = frozenset({"string", "hybrid", "micro"})
 MAX_MICRO_MODELS = 1
-INVERTER_DC_PORTS = ("A", "B")
+INVERTER_DC_PORTS = ("A", "B", "C", "D")
 SUPPORTED_SYSTEMS = ("1F-2H", "2F-3H")
 
 Status = Literal["supported", "pending"]
@@ -64,7 +64,9 @@ CAPABILITIES: tuple[Capability, ...] = (
         "strings.count",
         "Número de cadenas",
         "supported",
-        f"Hasta {MAX_STRINGS} cadenas por inversor; más cadenas están pendientes.",
+        f"Hasta {MAX_STRINGS} cadenas por inversor, una por MPPT (A y B a la izquierda, C y D "
+        "arriba); dos cadenas en paralelo en una entrada están pendientes. El dimensionamiento "
+        "automático y el plano A3 todavía usan las entradas A y B.",
     ),
     Capability(
         "strings.mppt",

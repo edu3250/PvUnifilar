@@ -325,7 +325,7 @@ def _unsupported(spec: PvSystemSpec) -> Iterator[DraftIssue]:
                 "unsupported",
                 f"strings[{index}].mppt",
                 f"La cadena {string.id} usa el MPPT «{string.mppt}»; por ahora solo se dibujan "
-                f"las entradas {' y '.join(INVERTER_DC_PORTS)}.",
+                f"las entradas {', '.join(INVERTER_DC_PORTS)}.",
                 (string.id, string.inverter),
             )
     if spec.storage.coupling != "none":

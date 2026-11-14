@@ -41,6 +41,7 @@ from typing import Any, Literal
 
 from pydantic import TypeAdapter, ValidationError
 
+from pvsld.capabilities import INVERTER_DC_PORTS
 from pvsld.catalogue import ComponentRegistry
 from pvsld.core import calc
 from pvsld.core.draft import DraftReport, evaluate_draft
@@ -318,10 +319,11 @@ def dc_box(
     )
     if layout == "auto":
         layout = box_layout(data) or "shared"
-    inverter = get_symbol("PVSLD_INV")
+    # The order the sheet draws them: A (upper left), B, then C and D (top).
+    order_of = {port: index for index, port in enumerate(INVERTER_DC_PORTS)}
     by_inverter: dict[str, list[Any]] = {}
     for string in sorted(
-        draft.derived.strings, key=lambda s: (-inverter.port(s.mppt_id).y, s.string_id)
+        draft.derived.strings, key=lambda s: (order_of.get(s.mppt_id, 99), s.string_id)
     ):
         by_inverter.setdefault(string.inverter_id, []).append(string)
     order = [i["id"] for i in data["inverters"] if i.get("id") in by_inverter]

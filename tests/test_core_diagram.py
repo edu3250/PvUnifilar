@@ -413,12 +413,12 @@ def test_two_inverters_are_rejected() -> None:
         build_diagram(parse_spec(mutated(two)))
 
 
-def test_a_third_mppt_has_no_port_in_the_symbol() -> None:
+def test_a_third_mppt_is_not_drawn_yet() -> None:
     def third(data: dict[str, Any]) -> None:
         data["inverters"][0]["mppt"].append({**data["inverters"][0]["mppt"][0], "id": "C"})
         data["strings"][1]["mppt"] = "C"
 
-    with pytest.raises(LayoutError, match="no port"):
+    with pytest.raises(LayoutError, match="entradas A y B"):
         build_diagram(parse_spec(mutated(third)))
 
 

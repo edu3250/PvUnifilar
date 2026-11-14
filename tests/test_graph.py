@@ -200,7 +200,7 @@ def test_protection_on_the_wrong_string(graph, template, registry) -> None:
 @pytest.mark.parametrize(
     ("change", "code", "node"),
     [
-        (lambda g: g["cables"].append({"from": "INV1.C", "to": "S1.OUT"}), "unknown_port", "INV1"),
+        (lambda g: g["cables"].append({"from": "INV1.E", "to": "S1.OUT"}), "unknown_port", "INV1"),
         (lambda g: g["cables"].append({"from": "X9.OUT", "to": "S1.OUT"}), "unknown_node", "X9"),
         (lambda g: g["nodes"].append({"id": "BAT1", "type": "battery"}), "unknown_type", "BAT1"),
         (lambda g: g["nodes"].append({"id": "M-2", "type": "meter"}), "disconnected", "M-2"),
@@ -219,10 +219,11 @@ def test_problems_name_their_node(graph, template, registry, change, code, node)
 
 
 def test_unsupported_topology_is_kept_and_flagged(graph, template, registry) -> None:
-    graph["nodes"].append(
-        {"id": "S3", "type": "pv_string", "values": {"module": MODULE, "n_series": 5}}
-    )
-    graph["cables"].append({"from": "S3.OUT", "to": "INV1.B"})
+    for n in range(3, MAX_STRINGS + 2):  # one string more than an inverter takes
+        graph["nodes"].append(
+            {"id": f"S{n}", "type": "pv_string", "values": {"module": MODULE, "n_series": 5}}
+        )
+        graph["cables"].append({"from": f"S{n}.OUT", "to": "INV1.B"})
     result = graph_to_spec(graph, template, registry=registry)
     assert len(result.spec["strings"]) == MAX_STRINGS + 1
     draft = evaluate_draft(result.spec)

@@ -127,8 +127,13 @@ def test_not_a_mapping_is_invalid_structure() -> None:
 @pytest.mark.parametrize(
     ("change", "path"),
     [
-        # a second inverter is supported since Stage 3.12.1; a third string on one is not
-        (lambda s: s["strings"].append({**s["strings"][0], "id": "S3"}), "strings"),
+        # a second inverter is supported since Stage 3.12.1; a fifth string on one is not
+        (
+            lambda s: s.update(
+                strings=[*s["strings"], *({**s["strings"][0], "id": f"S{n}"} for n in (3, 4, 5))]
+            ),
+            "strings",
+        ),
         (lambda s: s["inverters"][0].update(qty=2), "inverters[0].qty"),
         (lambda s: s["storage"].update(coupling="dc"), "storage.coupling"),
     ],
@@ -143,13 +148,12 @@ def test_unsupported_designs_still_run_the_rules(spec: dict[str, Any], change, p
     assert not report.ok
 
 
-def test_three_strings_are_unsupported(spec: dict[str, Any]) -> None:
-    extra = {**spec["strings"][1], "id": "S3"}
-    spec["strings"].append(extra)
+def test_five_strings_on_one_inverter_are_unsupported(spec: dict[str, Any]) -> None:
+    spec["strings"] += [{**spec["strings"][1], "id": f"S{n}"} for n in (3, 4, 5)]
     report = evaluate_draft(spec)
     issue = next(i for i in report.issues if i.path == "strings")
     assert issue.category == "unsupported"
-    assert issue.component_ids == ("S1", "S2", "S3")
+    assert issue.component_ids == ("S1", "S2", "S3", "S4", "S5")
 
 
 def test_report_is_plain_data(spec: dict[str, Any]) -> None:
