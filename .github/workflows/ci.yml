@@ -35,7 +35,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install the package with dev tools
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,catalogue]"
 
       - name: Lint
         run: ruff check .
