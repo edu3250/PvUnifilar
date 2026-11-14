@@ -55,20 +55,24 @@ and comment why.
 
 ## 2. Prepare your working copy
 
-All commands run in **Git Bash**. Start from the main checkout of the repository
-(`D:\DataScience\Diagrama-unifilarAutoCAD`) and create your own worktree. `<fam>` is the family id
-in lowercase, for example `longi-lr5-54hth`.
+All commands run in **Git Bash**. Your session may start in the main checkout of the repository
+or in another checkout of it (a workspace or a worktree): the first two lines find the **main
+checkout** (`MAIN`) from wherever you are, and every shared folder (`.venv`, `datasheets/inbox`,
+`datasheets/cache`, `.worktrees`) is taken from `MAIN`, never from your current folder. `<fam>` is
+the family id in lowercase, for example `longi-lr5-54hth`.
 
 ```bash
-cd /d/DataScience/Diagrama-unifilarAutoCAD
-git fetch origin
-git worktree add .worktrees/cat-<fam> -b catalogue/<fam> origin/develop
-cd .worktrees/cat-<fam>
-MAIN=/d/DataScience/Diagrama-unifilarAutoCAD
+MAIN="$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)"
+echo "$MAIN"   # must print the main checkout, e.g. /d/DataScience/Diagrama-unifilarAutoCAD
+git -C "$MAIN" fetch origin
+git -C "$MAIN" worktree add "$MAIN/.worktrees/cat-<fam>" -b catalogue/<fam> origin/develop
+cd "$MAIN/.worktrees/cat-<fam>"
 pvsld() { PYTHONPATH=src "$MAIN/.venv/Scripts/python.exe" -c "import sys; from pvsld.cli import main; sys.exit(main(sys.argv[1:]))" "$@"; }
 ```
 
-Define the `pvsld` function again in every new shell. Never run `pip install` in the main `.venv`.
+Define `MAIN` and the `pvsld` function again in every new shell (run the `MAIN=` line from inside
+any checkout of the repository). Never run `pip install` in the main `.venv`. Every path written in
+the pull request (`datasheets/inbox/…`, `datasheets/cache/review/…`) is relative to `MAIN`.
 
 ## 3. Get the official datasheet
 
@@ -179,9 +183,24 @@ source:
   25 °C, AM 1.5), exactly as printed, all decimals.
 - `noct`: the NOCT (or NMOT) row when printed; then `noct_c` is required. If the sheet prints NMOT
   instead of NOCT, use it and say so in `source.notes`.
-- Bifacial modules: `bifacial: true`, `bifaciality_pct` (`pmax`, `voc`, `isc` keys when printed, or
-  only `pmax`) and `bnpi` with the values at bifacial nameplate irradiance when printed. The STC
-  row is still the front-side value.
+- Bifacial modules: `bifacial: true` and `bifaciality_pct` (`pmax`, `voc`, `isc` keys when printed,
+  or only `pmax`). The STC row is still the front-side value. `bnpi` holds the values at **bifacial
+  nameplate irradiance** (BNPI: 1000 W/m² front plus 135 W/m² rear); the engine uses its `isc_a` as
+  the hard limit of the inverter input, so it must never be lower than the real BNPI value:
+  - the datasheet prints a BNPI row (it may be called BNPI or "1000 W/m² + 135 W/m²"): copy it
+    exactly as printed;
+  - otherwise (no table, or only rear-gain tables such as 5 %, 10 %, 15 %, 20 %, which you must not
+    copy as `bnpi`): **compute** it from the STC row with `k = 1 + 0.135 × φ`, where `φ` is
+    `bifaciality_pct.isc / 100` when printed, else `bifaciality_pct.pmax / 100` (owner decision
+    2026-11-14):
+    `isc_a = Isc × k` and `imp_a = Imp × k` rounded to 2 decimals, `pmax_w = Pmax × k` rounded to
+    a whole watt, `voc_v` and `vmp_v` equal to the STC values. Write in `source.notes`: "bnpi
+    computed from STC with k = 1 + 0.135 × φ = <k> (BNPI not printed)". The verifier will not find
+    these numbers in the text layer; list them in the pull request as computed, not as checked on
+    the page.
+
+  Example: Isc 15.41 A, Imp 14.55 A, Pmax 650 W, bifaciality 80 % → k = 1.108 →
+  `bnpi: {pmax_w: 720, vmp_v: <STC Vmp>, imp_a: 16.12, voc_v: <STC Voc>, isc_a: 17.07}`.
 - List variants from the lowest to the highest `pmax_w`.
 
 **Family values**
@@ -297,7 +316,9 @@ merge catalogue pull requests without the owner's per-PR approval).
    PDF is the one the issue names (same SHA-256) and the URL is optional.
 4. **Values.** Open the rendered pages (`datasheets/cache/review/<fam>/page-*.png`; render them if
    missing) and check every value the verifier did not find, plus a spot check of the found ones
-   (small integers can match by chance). Check the variant list against the table: none missing,
+   (small integers can match by chance). For bifacial modules, check that `bnpi` is either the
+   printed BNPI row or computed with the rule of section 5 (recompute it). Check the variant list
+   against the table: none missing,
    none extra. Check the deductions in `source.notes`.
 5. **Close without merging** (label `rejected`) when: the URL is not official, the SHA-256 does not
    match, a model is not in the datasheet, or there are more than 3 wrong values.
