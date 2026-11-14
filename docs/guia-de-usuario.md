@@ -298,10 +298,11 @@ Antes de dibujar, el diseño pasa por un paquete de reglas con versión (`mx-gd-
 | STR-007 | La potencia del arreglo y la relación CD/CA: aviso arriba de 1.35, rechazo arriba de 1.50 | fabricante |
 | CON-003 | Cada conductor está protegido por su interruptor o fusible | NOM 240-4, 690-8(b) |
 | CON-006 | El llenado de la tubería EMT | NOM 358-22, capítulo 10 |
-| PCC-002 | La regla del 120 % de la barra del centro de carga | NOM 705-12(d)(2) |
+| PCC-002 | La regla del 120 % de la barra del centro de carga (solo si el diseño tiene centro de carga) | NOM 705-12(d)(2) |
 | MET-001 | Medidor bidireccional en el punto de interconexión | requisitos de interconexión |
 | DIS-003 | Desconectador a la salida del sistema fotovoltaico | requisitos de interconexión |
 | DIS-004 | Desconectador bidireccional del servicio | requisitos de interconexión |
+| DIS-005 | Aviso si un solo interruptor hace de desconectador del sistema fotovoltaico y del servicio | RES/142/2017 de la CRE |
 
 Durante el dimensionamiento también se eligen y comprueban: el fusible o interruptor de cada cadena (al menos 1.56 × Isc y no más que el fusible máximo del módulo), el calibre de cada conductor por ampacidad con sus factores de temperatura y agrupamiento, y la caída de tensión de cada circuito.
 

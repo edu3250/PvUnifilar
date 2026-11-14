@@ -832,7 +832,7 @@ def build_palette(registry: ComponentRegistry | None = None) -> Palette:
         registry = ComponentRegistry.load(data_path("datasheets/records"))
     fields: dict[str, Any] = {
         "library_version": LIBRARY_VERSION,
-        "schema_version": spec_model.MICRO_SCHEMA_VERSION,
+        "schema_version": spec_model.LATEST_SCHEMA_VERSION,
         "types": tuple(_type_descriptor(definition) for definition in TYPES),
         "equipment": _equipment(registry),
         "derived_names": DERIVED_NAMES,

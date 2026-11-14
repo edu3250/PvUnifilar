@@ -400,8 +400,12 @@ def _met_001(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
 
 
 def _dis_003(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
-    devices = [*ctx.spec.ac_bos.ocpds, *ctx.spec.ac_bos.disconnects]
-    i1 = [d for d in devices if d.role == "I1"]
+    ac = ctx.spec.ac_bos
+    devices = [*ac.ocpds, *ac.disconnects]
+    # Schema 0.3.0: the service breaker may also be I1 (warning DIS-005).
+    i1 = [d for d in devices if d.role == "I1"] + [
+        b for b in ac.main_breakers if b.plant_disconnect
+    ]
     if not i1:
         yield (
             Severity.ERROR,
@@ -448,6 +452,18 @@ def _dis_004(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
                 Severity.ERROR,
                 breaker.id,
                 f"El desconectador I2 {breaker.id} del servicio debe ser bidireccional.",
+            )
+
+
+def _dis_005(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
+    for breaker in ctx.spec.ac_bos.main_breakers:
+        if breaker.plant_disconnect:
+            yield (
+                Severity.WARNING,
+                breaker.id,
+                f"Un solo interruptor ({breaker.id}) hace de I1 e I2: para desconectar la central "
+                "hay que cortar todo el servicio. La RES/142/2017 dibuja I1 e I2 como dos "
+                "interruptores.",
             )
 
 
@@ -564,6 +580,15 @@ RULES: tuple[RuleDef, ...] = (
         ),
         mx_ids=("MX-E02",),
         check=_dis_004,
+    ),
+    RuleDef(
+        id="DIS-005",
+        title_es="I1 e I2 en interruptores separados (aviso si uno solo hace de ambos)",
+        severity="W",
+        basis=("CRE/CFE",),
+        cites=(Cite("CRE RES/142/2017", "Anexo II, 1 y 4"),),
+        mx_ids=("MX-E01", "MX-E02"),
+        check=_dis_005,
     ),
 )
 

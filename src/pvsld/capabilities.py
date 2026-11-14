@@ -124,6 +124,20 @@ CAPABILITIES: tuple[Capability, ...] = (
         "de conexiones, ITM de rama y caja combinadora; hasta 8 microinversores en 3 ramas.",
     ),
     Capability(
+        "service.no_load_centre",
+        "Conexión sin centro de carga",
+        "supported",
+        "Inversor, I1, interruptor principal I2 (punto de interconexión), medidor y red, sin "
+        "centro de carga dibujado (esquemas de la RES/142/2017); un solo ITM puede hacer de I1 e "
+        "I2 con aviso DIS-005. Solo con inversor de cadena.",
+    ),
+    Capability(
+        "drawing.no_load_centre",
+        "Plano sin centro de carga",
+        "pending",
+        "La plantilla A3 todavía dibuja siempre el centro de carga.",
+    ),
+    Capability(
         "utility.system",
         "Servicio",
         "supported",

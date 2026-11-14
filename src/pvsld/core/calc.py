@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-from pvsld.core.model import Circuit, Module, Ocpd, PvSystemSpec, StringSpec
+from pvsld.core.model import Circuit, MainBreaker, Module, Ocpd, PvSystemSpec, StringSpec
 from pvsld.core.tables import NomTables, get_tables
 
 VocMethod = Literal["coefficient", "table_690_7", "iec_default_1_2"]
@@ -389,9 +389,11 @@ def _base_id(endpoint: str) -> str:
     return endpoint.split(".", maxsplit=1)[0]
 
 
-def protecting_ocpd(spec: PvSystemSpec, circuit: Circuit) -> Ocpd | None:
-    """The OCPD a circuit is wired to (either endpoint), if any."""
-    by_id = {o.id: o for o in spec.ac_bos.ocpds}
+def protecting_ocpd(spec: PvSystemSpec, circuit: Circuit) -> Ocpd | MainBreaker | None:
+    """The OCPD a circuit is wired to (either endpoint), if any; a service breaker counts when it
+    is also the plant disconnect I1 (schema 0.3.0)."""
+    by_id: dict[str, Ocpd | MainBreaker] = {o.id: o for o in spec.ac_bos.ocpds}
+    by_id.update({b.id: b for b in spec.ac_bos.main_breakers if b.plant_disconnect})
     for endpoint in (circuit.to, circuit.from_):
         found = by_id.get(_base_id(endpoint))
         if found is not None:
