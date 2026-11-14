@@ -1,0 +1,48 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per power level.
+component_type: pv_module
+family_id: LONGI-LR5-54HPH
+manufacturer: LONGi
+model_family: Hi-MO 5m LR5-54HPH 405~425M
+cell_type: PERC mono-crystalline
+cells: 108
+bifacial: false
+dimensions_mm: [1722, 1134, 30]
+weight_kg: 20.8
+frame: anodized aluminum alloy frame
+front_cover: single glass, 3.2mm coated tempered glass
+junction_box: IP68, three diodes
+cable_mm2: 4
+max_system_voltage_v: 1500
+max_series_fuse_a: 25
+operating_temp_c: [-40, 85]
+noct_c: 45
+power_tolerance_pct: [0, 3]
+temp_coef_pmax_pct_per_c: -0.340
+temp_coef_voc_pct_per_c: -0.265
+temp_coef_isc_pct_per_c: 0.050
+certifications: [IEC 61215, IEC 61730, UL 61730]
+variants:
+  - {component_id: LONGI-LR5-54HPH-405M, pmax_w: 405, vmp_v: 31.00, imp_a: 13.07, voc_v: 37.00, isc_a: 13.83, efficiency_pct: 20.7, noct: {pmax_w: 302.7, vmp_v: 28.80, imp_a: 10.52, voc_v: 34.79, isc_a: 11.18}}
+  - {component_id: LONGI-LR5-54HPH-410M, pmax_w: 410, vmp_v: 31.25, imp_a: 13.12, voc_v: 37.25, isc_a: 13.88, efficiency_pct: 21.0, noct: {pmax_w: 306.5, vmp_v: 29.03, imp_a: 10.56, voc_v: 35.02, isc_a: 11.22}}
+  - {component_id: LONGI-LR5-54HPH-415M, pmax_w: 415, vmp_v: 31.49, imp_a: 13.18, voc_v: 37.50, isc_a: 13.94, efficiency_pct: 21.3, noct: {pmax_w: 310.2, vmp_v: 29.25, imp_a: 10.60, voc_v: 35.26, isc_a: 11.27}}
+  - {component_id: LONGI-LR5-54HPH-420M, pmax_w: 420, vmp_v: 31.73, imp_a: 13.24, voc_v: 37.75, isc_a: 14.01, efficiency_pct: 21.5, noct: {pmax_w: 313.9, vmp_v: 29.47, imp_a: 10.65, voc_v: 35.49, isc_a: 11.32}}
+  - {component_id: LONGI-LR5-54HPH-425M, pmax_w: 425, vmp_v: 31.94, imp_a: 13.31, voc_v: 37.96, isc_a: 14.08, efficiency_pct: 21.8, noct: {pmax_w: 317.7, vmp_v: 29.67, imp_a: 10.71, voc_v: 35.69, isc_a: 11.38}}
+source:
+  filename: Hi_MO_5m_LR_5_54_HPH_405_425_M_30_30_and_15_Frame_V15_1_62eca3fbc2.pdf
+  url: https://static.longi.com/Hi_MO_5m_LR_5_54_HPH_405_425_M_30_30_and_15_Frame_V15_1_62eca3fbc2.pdf
+  sha256: 4b4a66da62c0363e84ed41cf1677693a67b9fb966502ef8ca6f23079047ad236
+  title: Hi-MO 5m LR5-54HPH 405~425M, (20220410V15)
+  pages: [1, 2]
+  extraction_method: rendered_page
+  extraction_date: 2026-11-14
+  reviewed_by: null
+  review_date: null
+  notes: >-
+    The PDF has no text layer (image-only), so every value was read from the rendered page images
+    (pages 1 and 2). The printed footer is (20220410V15). The sheet is the monofacial single-glass
+    version the issue asks for (glass row: "Single glass, 3.2mm coated tempered glass"). The two
+    pages do not print a cell technology; they name "M10 Gallium-doped Wafer", "Integrated
+    Segmented Ribbons" and "9-busbar Half-cut Cell"; the modules use LONGi's PERC
+    mono-crystalline cells per the manufacturer's Hi-MO 5m product page. The sheet prints
+    "DC1500V (IEC/UL)"; the record keeps the IEC 1500 V. The NOCT row (45±2°C) is printed as NOCT.
+    In addition to the 0~3% power tolerance the sheet prints a ±3% Voc and Isc tolerance.
