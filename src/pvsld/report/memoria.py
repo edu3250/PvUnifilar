@@ -826,7 +826,7 @@ def build_memoria(
             "kA",
             "Dato del servicio",
         )
-        if multi:
+        if multi and len(spec.inverter_breakers()) == 1:  # one shared breaker
             put(
                 "iacsum",
                 "Inversor",

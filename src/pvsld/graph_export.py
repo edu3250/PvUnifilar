@@ -175,7 +175,25 @@ def spec_to_graph(
     mains = {m["id"]: m for m in ac.get("main_breakers", [])}
     service_main = poc.get("breaker") if no_panel else None
     string_inverters = [i for i in spec.get("inverters", []) if i.get("type") != "micro"]
-    if string_inverters and itm_id:
+    onward = {
+        c["from"].split(".", 1)[0]: c["to"].split(".", 1)[0]
+        for c in spec.get("circuits", [])
+        if c.get("kind") == "inverter_output"
+    }
+    targets = {i["id"]: onward.get(i["id"]) for i in string_inverters}
+    string_box = spec.get("ac_combiner") if not spec.get("ac_branches") else None
+    if string_inverters and (string_box or len(set(targets.values())) > 1):
+        _inverter_breakers(
+            d,
+            spec,
+            string_inverters,
+            targets,
+            string_box,
+            ocpds,
+            by_from,
+            None if no_panel else panel_id,
+        )
+    elif string_inverters and itm_id:
         if itm_id in mains:  # one breaker as I1 and I2 (schema 0.3.0)
             d.node(itm_id, "ac_breaker", **_values(mains[itm_id], _MAIN_DERIVED))
         else:
@@ -383,6 +401,86 @@ def _micro_side(
     main = combiner["main_ocpd"]
     breaker(main)
     d.cable(f"{bus[-1]}.E", f"{main}.IN", **_circuit_extra(by_from.get(combiner["id"])))
+    d.cable(f"{main}.OUT", f"{panel_id}.LEFT")
+
+
+def _inverter_breakers(
+    d: _Drawing,
+    spec: Mapping[str, Any],
+    inverters: list[Mapping[str, Any]],
+    targets: Mapping[str, str | None],
+    box: Mapping[str, Any] | None,
+    ocpds: Mapping[str, Mapping[str, Any]],
+    by_from: Mapping[str, Mapping[str, Any]],
+    panel_id: str | None,
+) -> None:
+    """A breaker per inverter in the load centre (or, without one, joined before the service
+    breaker I2), or the inverter breakers in an AC combiner
+    (bus of junctions, AC SPD, main breaker outside towards the load centre)."""
+
+    def values(breaker_id: str) -> dict[str, Any]:
+        return _values(ocpds.get(breaker_id, {"id": breaker_id}), ("id", "role", "backfed", "at"))
+
+    if box is None:
+        for inverter in inverters:
+            target = targets[inverter["id"]]
+            if target is None:
+                continue
+            if target not in d.breakers:
+                d.node(target, "ac_breaker", **values(target))
+                d.breakers.add(target)
+                if panel_id is not None:
+                    d.cable(f"{target}.OUT", f"{panel_id}.LEFT")
+            d.cable(
+                f"{inverter['id']}.AC",
+                f"{target}.IN",
+                **_circuit_extra(by_from.get(inverter["id"])),
+            )
+        if panel_id is None:  # the breakers' runs join before the service breaker I2
+            ac = spec.get("ac_bos") or {}
+            service = (ac.get("point_of_connection") or {}).get("breaker")
+            junction = next((j["id"] for j in ac.get("junction_boxes", [])), None)
+            if junction is not None and service:
+                d.node(junction, "junction")
+                for target in dict.fromkeys(t for t in targets.values() if t is not None):
+                    d.cable(f"{target}.OUT", f"{junction}.W", **_circuit_extra(by_from.get(target)))
+                d.cable(f"{junction}.E", f"{service}.IN", **_circuit_extra(by_from.get(junction)))
+        return
+    inside = [t for t in dict.fromkeys(targets.values()) if t is not None]
+    spds = {s["id"]: s for s in (spec.get("ac_bos") or {}).get("spds", [])}
+    bus = [f"BUS-{k}" for k in range(1, len(inside) + 1)]
+    children: list[dict[str, Any]] = []
+    for target in inside:
+        child: dict[str, Any] = {"id": target, "type": "ac_breaker"}
+        if values(target):
+            child["values"] = values(target)
+        children.append(child)
+        d.breakers.add(target)
+    children += [{"id": junction, "type": "junction"} for junction in bus]
+    spd_id = box.get("spd")
+    if spd_id:
+        children.append(
+            {"id": spd_id, "type": "ac_spd", "values": _values(spds.get(spd_id, {}), ("id", "at"))}
+        )
+    d.nodes.append({"id": box["id"], "type": "ac_combiner", "children": children})
+    for inverter in inverters:
+        target = targets[inverter["id"]]
+        if target is not None:
+            d.cable(
+                f"{inverter['id']}.AC",
+                f"{target}.IN",
+                **_circuit_extra(by_from.get(inverter["id"])),
+            )
+    for junction, target in zip(bus, inside, strict=True):
+        d.cable(f"{target}.OUT", f"{junction}.N")
+    for left, right in itertools.pairwise(bus):
+        d.cable(f"{left}.E", f"{right}.W")
+    if spd_id:
+        d.cable(f"{bus[0]}.S", f"{spd_id}.L")
+    main = box["main_ocpd"]
+    d.node(main, "ac_breaker", **values(main))
+    d.breakers.add(main)
+    d.cable(f"{bus[-1]}.E", f"{main}.IN", **_circuit_extra(by_from.get(box["id"])))
     d.cable(f"{main}.OUT", f"{panel_id}.LEFT")
 
 

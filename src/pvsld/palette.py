@@ -515,9 +515,15 @@ TYPES: tuple[_TypeDef, ...] = (
         naming=(
             _rule(
                 "ITM-{n}",
-                "ITM-1 (salida del inversor o ITM general de la caja combinadora de CA), ITM-2...",
+                "ITM-1 (salida del inversor o ITM general de la caja combinadora de CA), ITM-2... "
+                "(con un ITM por inversor, el mismo número que INV<n>)",
             ),
             _rule("ITM-R{n}", "ITM de la rama de microinversores R<n>", "micro_branch"),
+            _rule(
+                "ITM-INV{n}",
+                "ITM del inversor INV<n> dentro del tablero combinador de CA",
+                "inverter_combiner",
+            ),
             _rule("ITM-P", "Interruptor principal del servicio", "service_main"),
         ),
         derived_fields=("role", "backfed", "at"),
@@ -645,7 +651,8 @@ DERIVED_NAMES: tuple[DerivedName, ...] = (
     DerivedName(
         pattern="C-CCA",
         spec_section="circuits[]",
-        description_es="Circuito de la caja combinadora de CA a su ITM general",
+        description_es="Circuito de la caja combinadora de CA (de microinversores o de "
+        "inversores) a su ITM general",
     ),
     DerivedName(
         pattern="INVM{n}",

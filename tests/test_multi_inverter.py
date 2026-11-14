@@ -181,7 +181,10 @@ def test_inverters_on_different_breakers_are_flagged(template, registry) -> None
         {"from": "ITM-2.OUT", "to": "M-1.IN"},
     ]
     result = graph_to_spec(graph, template, registry=registry)
-    assert any(i.code == "unsupported" and "ITM distintos" in i.message_es for i in result.issues)
+    # A breaker per inverter without a load centre needs a service breaker I2 (Stage 3.14).
+    assert any(
+        i.code == "topology" and "interruptor principal (I2)" in i.message_es for i in result.issues
+    )
 
 
 def test_runs_landing_on_the_breaker_need_no_junction(template, registry) -> None:

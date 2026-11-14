@@ -593,6 +593,35 @@ class PvSystemSpec(_Strict):
         """The string (and hybrid) inverters, in specification order."""
         return [i for i in self.inverters if i.type != "micro"]
 
+    def inverter_breakers(self) -> dict[str, list[Inverter]]:
+        """The breaker each string inverter's output reaches (through an AC junction box when
+        they share one) and the inverters it protects: one shared breaker, one breaker per
+        inverter, or the inverter breakers of an AC combiner (owner 2026-11-14)."""
+        junctions = {j.id for j in self.ac_bos.junction_boxes}
+        onward = {
+            _base_id(c.from_): _base_id(c.to) for c in self.circuits if c.kind == "inverter_output"
+        }
+        found: dict[str, list[Inverter]] = {}
+        for inverter in self.string_inverters():
+            target = onward.get(inverter.id)
+            if target in junctions:
+                target = onward.get(target)
+            if target is None:
+                target = self.inverter_breaker_id()
+            found.setdefault(target, []).append(inverter)
+        return found
+
+    def combiner_current_a(self) -> float:
+        """The current the AC combiner's main breaker carries: every microinverter of its
+        branches, or every string inverter whose breaker sits in it."""
+        inverters = {i.id: i for i in self.inverters}
+        if self.ac_branches:
+            return sum(
+                len(b.microinverters) * inverters[b.microinverters[0].inverter].iac_max_a
+                for b in self.ac_branches
+            )
+        return sum(i.iac_max_a * i.qty for i in self.string_inverters())
+
     def inverter_breaker_id(self) -> str:
         """The breaker of the string inverter's output (I1): the backfed I1 breaker, else the
         service breaker that is also I1 (schema 0.3.0), else the point-of-connection breaker."""
@@ -746,7 +775,19 @@ class PvSystemSpec(_Strict):
     def _branch_problems(self, modules: set[str], inverters: Mapping[str, Inverter]) -> list[str]:
         """Cross references of ``ac_branches`` and ``ac_combiner`` (schema 0.2.0)."""
         if not self.ac_branches:
-            return ["ac_combiner needs ac_branches"] if self.ac_combiner is not None else []
+            # An AC combiner of string inverters holds their breakers (Stage 3.14).
+            combiner = self.ac_combiner
+            if combiner is None:
+                return []
+            if not any(o.at == combiner.id for o in self.ac_bos.ocpds):
+                return ["ac_combiner needs ac_branches or inverter breakers at it"]
+            problems = self._combiner_problems()
+            if self.schema_version == SCHEMA_VERSION:
+                problems.append(
+                    f"ac_combiner needs schema_version {MICRO_SCHEMA_VERSION!r} or later "
+                    f"(got {self.schema_version!r})"
+                )
+            return problems
         problems: list[str] = self._combiner_problems()
         if self.schema_version == SCHEMA_VERSION:
             problems.append(

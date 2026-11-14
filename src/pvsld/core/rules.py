@@ -467,6 +467,28 @@ def _dis_005(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
             )
 
 
+def _cmb_001(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
+    """The main breaker of an AC combiner of string inverters: 1.25 x the sum of their currents
+    (690-8(a)(3), 690-8(b)(1)); the micro combiner is MIC-020."""
+    spec = ctx.spec
+    combiner = spec.ac_combiner
+    if combiner is None or spec.ac_branches:
+        return
+    main = next((o for o in spec.ac_bos.ocpds if o.id == combiner.main_ocpd), None)
+    if main is None:
+        return
+    current = spec.combiner_current_a()
+    minimum = calc.ocpd_min_a(current)
+    if main.rating_a < minimum:
+        yield (
+            Severity.ERROR,
+            main.id,
+            f"El ITM general {main.id} del tablero combinador {combiner.id} es de "
+            f"{_g(main.rating_a)} A; debe ser al menos 1.25 × {_n(current, 2)} A = "
+            f"{_n(minimum)} A (suma de las corrientes de los inversores, NOM 690-8).",
+        )
+
+
 def _srv_001(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
     """The inverter and the service: a three-phase inverter needs 3F-4H; a single-phase one on
     3F-4H is allowed with an imbalance warning (owner decision 2026-11-14)."""
@@ -612,6 +634,15 @@ RULES: tuple[RuleDef, ...] = (
         cites=(Cite("CRE RES/142/2017", "Anexo II, 1 y 4"),),
         mx_ids=("MX-E01", "MX-E02"),
         check=_dis_005,
+    ),
+    RuleDef(
+        id="CMB-001",
+        title_es="ITM general del tablero combinador de inversores (1.25 × suma de corrientes)",
+        severity="E",
+        basis=("NOM",),
+        cites=(Cite("NOM-001-SEDE-2012", "690-8(a)(3), 690-8(b)(1)"),),
+        mx_ids=(),
+        check=_cmb_001,
     ),
     RuleDef(
         id="SRV-001",

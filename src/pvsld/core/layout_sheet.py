@@ -746,6 +746,11 @@ def build_sheet_diagram(
 
     if spec.layout.template != TEMPLATE:
         raise LayoutError(f"unsupported layout template {spec.layout.template!r}")
+    if not spec.ac_branches and (spec.ac_combiner is not None or len(spec.inverter_breakers()) > 1):
+        raise LayoutError(
+            "El plano A3 todavía no dibuja un ITM por inversor ni el tablero combinador de "
+            "inversores (llega en la siguiente versión). El diseño sí se valida y se calcula."
+        )
     if spec.ac_bos.point_of_connection.panel is None:
         raise LayoutError(
             "El plano A3 todavía no dibuja un diseño sin centro de carga (llega en la siguiente "
