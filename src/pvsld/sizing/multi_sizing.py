@@ -27,7 +27,6 @@ from pvsld.catalogue import PVModule as CatalogueModule
 from pvsld.core.model import Module, Standards
 from pvsld.core.rules import Finding
 from pvsld.core.severity import Severity
-from pvsld.graph import graph_to_spec
 from pvsld.sizing.dcbox import apply_dc_box, dc_box
 from pvsld.sizing.models import Issue, SizingRequest
 from pvsld.sizing.strings import EvalContext, Evaluation, enumerate_configs, evaluate_config
@@ -297,6 +296,8 @@ def build_multi_spec(
     registry: ComponentRegistry,
 ) -> tuple[dict[str, Any] | None, list[Issue]]:
     """The specification of ``units`` on one shared breaker, with each inverter's DC box."""
+    from pvsld.graph import graph_to_spec  # pvsld.graph imports the sizing engine
+
     template = _template(request)
     result = graph_to_spec(_graph(request, module, units, template), template, registry=registry)
     if not result.ok:

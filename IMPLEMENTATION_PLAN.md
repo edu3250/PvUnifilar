@@ -1051,7 +1051,16 @@ inverter and the junction box; text report and MCP texts list each inverter.
 **Status**: In Progress
 
 ##### Stage 3.12.3: A3 sheet, up to 3 inverters x 2 strings
-**Status**: Not Started
+**Goal**: `pvsld.core.layout_multi.build_multi_schematic`: each inverter a row (its part of the
+specification drawn by the one-inverter `build_schematic` and scaled: 0.72 with 2 inverters, 0.6
+with 3), the outputs `C-INV<n>` on a vertical bus to the junction box `CJ-CA1`, `C-INVT` to the
+shared `ITM-1`, the one-inverter service side; every earth (inverter, DC SPD) to its row's rail
+and one earth bus to the electrode under the rows, the load centre's earth above the schedule;
+the memory line, circuit box 2 (`n x C-INV`, `C-INVT`, shared breaker), the inverter box
+(`(x n)`), the project line and the AC capacity cover every inverter; more than 3 inverters or 2
+strings on one is refused with a clear message.
+**Tests**: tests/test_multi_inverter_sheet.py.
+**Status**: In Progress
 
 ##### Stage 3.12.4: plugin (MCP, skills, pro mode), then 3.11.2 and release 0.10.0
 **Status**: Not Started
