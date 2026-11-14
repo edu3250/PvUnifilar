@@ -70,6 +70,7 @@ class VerifyReport:
     pages_without_text: list[int] = field(default_factory=list)
     family_id: str | None = None
     reviewed_by: str | None = None
+    owner_supplied: bool = False
 
     @property
     def ok(self) -> bool:
@@ -92,7 +93,8 @@ class VerifyReport:
             "### pvsld catalogue verify",
             "",
             f"- Record: `{self.record.as_posix()}` (family `{self.family_id or '?'}`)",
-            f"- Datasheet: `{self.pdf.name}`, pages {_pages(self.pages)}",
+            f"- Datasheet: `{self.pdf.name}`, pages {_pages(self.pages)}"
+            + (" (supplied by the owner)" if self.owner_supplied else ""),
             f"- Text layer: {found} of {len(self.checks)} values found on the cited pages",
         ]
         if self.pages_without_text:
@@ -258,9 +260,15 @@ def _module_warnings(data: dict[str, Any]) -> list[str]:
     return warnings
 
 
-def verify_record(record: Path, pdf: Path, records_dir: Path | None = None) -> VerifyReport:
-    """Run every mechanical check of a catalogue pull request; see the module docstring."""
-    report = VerifyReport(record=record, pdf=pdf)
+def verify_record(
+    record: Path, pdf: Path, records_dir: Path | None = None, *, owner_supplied: bool = False
+) -> VerifyReport:
+    """Run every mechanical check of a catalogue pull request; see the module docstring.
+
+    ``owner_supplied``: the owner gave the PDF (queue issue with a local path), so ``source.url``
+    is optional; the SHA-256 still ties the record to that file.
+    """
+    report = VerifyReport(record=record, pdf=pdf, owner_supplied=owner_supplied)
     try:
         family = read_record(record)
     except CatalogueError as error:
@@ -275,7 +283,7 @@ def verify_record(record: Path, pdf: Path, records_dir: Path | None = None) -> V
     if records_dir is None:
         records_dir = record.parent.parent
     report.problems += _catalogue_problems(record, family, records_dir)
-    if not source.url:
+    if not source.url and not owner_supplied:
         report.problems.append("source.url is required: the official datasheet address")
     if family.component_type == "pv_module":
         report.warnings += _module_warnings(data)

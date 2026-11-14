@@ -90,6 +90,14 @@ def test_the_official_url_is_required(tmp_path: Path) -> None:
     assert report.problems == ["source.url is required: the official datasheet address"]
 
 
+def test_an_owner_supplied_datasheet_needs_no_url(tmp_path: Path) -> None:
+    record, pdf, _ = _draft(tmp_path, url=None)
+    report = verify_record(record, pdf, owner_supplied=True)
+    assert report.ok, report.problems
+    assert "(supplied by the owner)" in report.to_markdown()
+    assert main(["catalogue", "verify", str(record), "--pdf", str(pdf), "--owner-supplied"]) == 0
+
+
 def test_a_component_id_already_in_the_catalogue_fails(tmp_path: Path) -> None:
     record, pdf, _ = _draft(tmp_path)
     other = mark_unreviewed(raw(ET_MODULE))
