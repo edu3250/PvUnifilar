@@ -243,22 +243,22 @@ def test_one_inverter_keeps_todays_names(template, registry) -> None:
 # --- Limits ----------------------------------------------------------------------------------
 
 
-def test_three_strings_on_one_inverter_are_still_unsupported(template, registry) -> None:
+def test_five_strings_on_one_inverter_are_still_unsupported(template, registry) -> None:
     graph = _graph([GROWATT_5K, GROWATT_5K])
-    graph["nodes"] += [
-        {"id": "S3", "type": "pv_string", "values": {"module": MODULE, "n_series": 8}},
-        {"id": "S4", "type": "pv_string", "values": {"module": MODULE, "n_series": 8}},
-    ]
-    graph["cables"] += [{"from": "S3.OUT", "to": "INV1.B"}, {"from": "S4.OUT", "to": "INV1.B"}]
+    for n in (3, 4, 5, 6):
+        graph["nodes"].append(
+            {"id": f"S{n}", "type": "pv_string", "values": {"module": MODULE, "n_series": 8}}
+        )
+        graph["cables"].append({"from": f"S{n}.OUT", "to": "INV1.B"})
     spec = graph_to_spec(graph, template, registry=registry).spec
     issues = [i for i in evaluate_draft(spec).issues if i.category == "unsupported"]
-    assert [i.component_ids for i in issues] == [("S1", "S3", "S4")]
+    assert [i.component_ids for i in issues] == [("S1", "S3", "S4", "S5", "S6")]
 
 
 def test_capabilities_and_the_sheet(template, registry) -> None:
     limits = capabilities()["limits"]
     assert limits["max_inverters"] is None
-    assert limits["max_strings_per_inverter"] == 2
+    assert limits["max_strings_per_inverter"] == 4
     spec = parse_spec(
         graph_to_spec(_graph([GROWATT_5K, GROWATT_5K]), template, registry=registry).spec
     )

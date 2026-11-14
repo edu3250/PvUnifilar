@@ -467,6 +467,29 @@ def _dis_005(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
             )
 
 
+def _srv_001(ctx: RuleContext) -> Iterator[tuple[Severity, str, str]]:
+    """The inverter and the service: a three-phase inverter needs 3F-4H; a single-phase one on
+    3F-4H is allowed with an imbalance warning (owner decision 2026-11-14)."""
+    system = ctx.spec.utility.system
+    for inverter in ctx.spec.string_inverters():
+        if inverter.phases == 3 and system != "3F-4H":
+            yield (
+                Severity.ERROR,
+                inverter.id,
+                f"El inversor {inverter.id} es trifásico y el servicio es {system} (monofásico): "
+                "use un inversor monofásico o un servicio trifásico 3F-4H.",
+            )
+        elif inverter.phases < 3 and system == "3F-4H":
+            wiring = "entre dos fases" if inverter.phases == 2 else "entre fase y neutro"
+            yield (
+                Severity.WARNING,
+                inverter.id,
+                f"El inversor {inverter.id} es monofásico en un servicio trifásico 3F-4H "
+                f"(conectado {wiring}): reparta los inversores entre las fases para no "
+                "desbalancear el servicio.",
+            )
+
+
 STRING_SECTIONS = ("project.site", "standards", "modules", "inverters", "strings")
 """What the string and voltage rules read: they run on a draft before the AC side exists."""
 
@@ -589,6 +612,15 @@ RULES: tuple[RuleDef, ...] = (
         cites=(Cite("CRE RES/142/2017", "Anexo II, 1 y 4"),),
         mx_ids=("MX-E01", "MX-E02"),
         check=_dis_005,
+    ),
+    RuleDef(
+        id="SRV-001",
+        title_es="Inversor compatible con el servicio (fases); aviso de desbalance en 3F-4H",
+        severity="E/W",
+        basis=("Fabricante",),
+        cites=(Cite("Hoja técnica del inversor", "salida de CA: tensión y fases"),),
+        mx_ids=(),
+        check=_srv_001,
     ),
 )
 

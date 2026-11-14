@@ -303,6 +303,7 @@ Antes de dibujar, el diseño pasa por un paquete de reglas con versión (`mx-gd-
 | DIS-003 | Desconectador a la salida del sistema fotovoltaico | requisitos de interconexión |
 | DIS-004 | Desconectador bidireccional del servicio | requisitos de interconexión |
 | DIS-005 | Aviso si un solo interruptor hace de desconectador del sistema fotovoltaico y del servicio | RES/142/2017 de la CRE |
+| SRV-001 | El inversor corresponde al servicio: trifásico solo en 3F-4H; aviso de desbalance si un inversor monofásico va en un servicio 3F-4H | hoja técnica del inversor |
 
 Durante el dimensionamiento también se eligen y comprueban: el fusible o interruptor de cada cadena (al menos 1.56 × Isc y no más que el fusible máximo del módulo), el calibre de cada conductor por ampacidad con sus factores de temperatura y agrupamiento, y la caída de tensión de cada circuito.
 

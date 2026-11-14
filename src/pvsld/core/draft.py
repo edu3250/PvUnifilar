@@ -325,7 +325,7 @@ def _unsupported(spec: PvSystemSpec) -> Iterator[DraftIssue]:
                 "unsupported",
                 f"strings[{index}].mppt",
                 f"La cadena {string.id} usa el MPPT «{string.mppt}»; por ahora solo se dibujan "
-                f"las entradas {' y '.join(INVERTER_DC_PORTS)}.",
+                f"las entradas {', '.join(INVERTER_DC_PORTS)}.",
                 (string.id, string.inverter),
             )
     if spec.storage.coupling != "none":
@@ -333,6 +333,12 @@ def _unsupported(spec: PvSystemSpec) -> Iterator[DraftIssue]:
             "unsupported",
             "storage.coupling",
             "Por ahora el motor no calcula almacenamiento de energía.",
+        )
+    if spec.ac_branches and spec.utility.system == "3F-4H":
+        yield DraftIssue(
+            "unsupported",
+            "utility.system",
+            "Por ahora el motor no calcula microinversores en un servicio trifásico (3F-4H).",
         )
     if spec.utility.voltage_level != "BT":
         yield DraftIssue(

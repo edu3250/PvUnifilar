@@ -36,7 +36,7 @@ from pvsld.core import model as spec_model
 from pvsld.resources import data_path
 from pvsld.sizing.bos import STRING_OCPD_POLES_BY_DC_SYSTEM
 from pvsld.symbols.cfe import get_symbol
-from pvsld.symbols.cfe.definitions import microinverter_name
+from pvsld.symbols.cfe.definitions import inverter_name, microinverter_name
 from pvsld.symbols.cfe.model import (
     LIBRARY_VERSION,
     Arc,
@@ -427,6 +427,8 @@ TYPES: tuple[_TypeDef, ...] = (
         spec_section="inverters[]",
         spec_model_name="Inverter",
         naming=(_rule("INV{n}", "INV1, INV2..."),),
+        # 3 and 4 MPPT: C (and D) on top (owner decision 2026-11-14)
+        variants=(inverter_name(3), inverter_name(4)),
     ),
     _TypeDef(
         "microinverter",
@@ -800,6 +802,16 @@ def _type_descriptor(definition: _TypeDef) -> TypeDescriptor:
     )
 
 
+def _block_of(component: Component) -> str | None:
+    """The symbol variant of a model, when it is not its type's own block."""
+    if component.component_type == "microinverter":
+        return microinverter_name(component.mppt_count)
+    mppt = getattr(component, "mppt_count", 0)
+    if component.component_type in ("string_inverter", "hybrid_inverter") and mppt > 2:
+        return inverter_name(mppt)
+    return None
+
+
 def _equipment(components: Iterable[Component]) -> tuple[EquipmentEntry, ...]:
     entries = []
     for component in components:
@@ -807,13 +819,7 @@ def _equipment(components: Iterable[Component]) -> tuple[EquipmentEntry, ...]:
         if type_id is None:  # conductors are wires, not palette items
             continue
         source = component.source
-        grid = getattr(component, "grid", "single_phase")
-        blocked = (
-            f"Inversor {'trifásico' if grid == 'three_phase' else grid}: por ahora el motor solo "
-            "diseña servicios monofásicos."
-            if grid != "single_phase"
-            else None
-        )
+        blocked = None  # three-phase inverters are designable since Stage 3.13.2
         entries.append(
             EquipmentEntry(
                 component_id=component.component_id,
@@ -830,9 +836,7 @@ def _equipment(components: Iterable[Component]) -> tuple[EquipmentEntry, ...]:
                 ),
                 designable=blocked is None,
                 not_designable_es=blocked,
-                block=microinverter_name(component.mppt_count)
-                if component.component_type == "microinverter"
-                else None,
+                block=_block_of(component),
             )
         )
     return tuple(sorted(entries, key=lambda e: (e.type_id, e.component_id)))
