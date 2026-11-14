@@ -1,0 +1,46 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per power level.
+component_type: pv_module
+family_id: JA-JAM72D42-LB
+manufacturer: JA Solar
+model_family: JAM72D42 LB
+cell_type: N-type mono-crystalline
+cells: 144
+bifacial: true
+bifaciality_pct: {pmax: 80}                      # printed as 80 % ±5 %
+dimensions_mm: [2465, 1134, 30]
+weight_kg: 34.6
+front_cover: 2.0 mm glass (front and back)
+max_system_voltage_v: 1500                       # IEC
+max_series_fuse_a: 30
+operating_temp_c: [-40, 85]
+noct_c: 45                                       # 45 ±2 °C
+power_tolerance_pct: [0, 3]                      # 0 ~ +3 %
+temp_coef_pmax_pct_per_c: -0.29
+temp_coef_voc_pct_per_c: -0.25
+temp_coef_isc_pct_per_c: 0.045
+junction_box: IP68, 3 diodes
+connector: QC 4.10-351 / MC4-EVO2A
+cable_mm2: 4.0
+certifications: [IEC 61215, IEC 61730, UL 61215, UL 61730, "ISO 9001: 2015", "ISO 14001: 2015", "ISO 45001: 2018", "IEC 62941: 2019"]
+variants:   # STC (1000 W/m², 25 °C, AM1.5); bnpi = 10 % rear/front irradiation table
+  - {component_id: JA-JAM72D42-625-LB, pmax_w: 625, vmp_v: 43.71, imp_a: 14.30, voc_v: 52.27, isc_a: 15.16, efficiency_pct: 22.4, bnpi: {pmax_w: 675, vmp_v: 43.71, imp_a: 15.44, voc_v: 52.27, isc_a: 16.37}}
+  - {component_id: JA-JAM72D42-630-LB, pmax_w: 630, vmp_v: 43.90, imp_a: 14.35, voc_v: 52.47, isc_a: 15.21, efficiency_pct: 22.5, bnpi: {pmax_w: 680, vmp_v: 43.90, imp_a: 15.50, voc_v: 52.47, isc_a: 16.43}}
+  - {component_id: JA-JAM72D42-635-LB, pmax_w: 635, vmp_v: 44.10, imp_a: 14.40, voc_v: 52.67, isc_a: 15.26, efficiency_pct: 22.7, bnpi: {pmax_w: 686, vmp_v: 44.10, imp_a: 15.55, voc_v: 52.67, isc_a: 16.48}}
+  - {component_id: JA-JAM72D42-640-LB, pmax_w: 640, vmp_v: 44.29, imp_a: 14.45, voc_v: 52.87, isc_a: 15.31, efficiency_pct: 22.9, bnpi: {pmax_w: 691, vmp_v: 44.29, imp_a: 15.61, voc_v: 52.87, isc_a: 16.53}}
+  - {component_id: JA-JAM72D42-645-LB, pmax_w: 645, vmp_v: 44.49, imp_a: 14.50, voc_v: 53.07, isc_a: 15.36, efficiency_pct: 23.1, bnpi: {pmax_w: 697, vmp_v: 44.49, imp_a: 15.66, voc_v: 53.07, isc_a: 16.59}}
+  - {component_id: JA-JAM72D42-650-LB, pmax_w: 650, vmp_v: 44.67, imp_a: 14.55, voc_v: 53.27, isc_a: 15.41, efficiency_pct: 23.3, bnpi: {pmax_w: 702, vmp_v: 44.67, imp_a: 15.71, voc_v: 53.27, isc_a: 16.64}}
+source:
+  filename: Bifacial PV Module 625W JA Solar Deep Blue 4.0.pdf
+  sha256: 6c01b9c625ca0d4f52564d65ac30a7455c25a6eb3a92c7f0b73e4696b2266235
+  title: JAM72D42 LB n-type Double Glass Bifacial Modules, Version No. Global-EN-20241122A
+  pages: [2]
+  extraction_method: pdf_text_layer
+  extraction_date: 2026-11-14
+  reviewed_by: null
+  review_date: null
+  notes: >-
+    Datasheet supplied by the owner. BNPI values are the 10% rear/front irradiation table as
+    printed; its Voc and Vmp rows equal the STC table. Bifaciality is printed as 80%±5%
+    (pmax only). NOCT is printed as 45±2 °C; the sheet has no NOCT electrical table. The model
+    suffix "/LB" is written "-LB" in component_id because ids allow only letters, digits, ".",
+    "_" and "-".
