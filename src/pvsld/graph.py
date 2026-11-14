@@ -77,7 +77,7 @@ from pvsld.resources import data_path
 from pvsld.sizing import adapters, bos
 from pvsld.sizing.engine import AC_BREAKER_VOLTAGE_V
 from pvsld.sizing.micro import limits_of as micro_limits_of
-from pvsld.sizing.models import SUPPORTED_SYSTEMS, Routing
+from pvsld.sizing.models import SERVICE_PHASES, Routing, inverter_phases
 
 FORMAT = "pvsld.graph/1"
 GROUP_TYPE = "dc_box"
@@ -528,7 +528,7 @@ def graph_to_spec(
     except ValidationError:
         standards = Standards(nom_edition="NOM-001-SEDE-2012", rulepack="mx-gd-2026.10")
     tables = get_tables(standards.nom_edition)
-    phases = SUPPORTED_SYSTEMS.get(utility.system, 1) if utility else 1
+    phases = SERVICE_PHASES.get(utility.system, 1) if utility else 1
 
     by_type: dict[str, list[GraphNode]] = {}
     for node in b.nodes.values():
@@ -544,18 +544,18 @@ def graph_to_spec(
         found = b.component(node, "model", CatalogueInverter, "inversor")
         if found is None or utility is None:
             continue
-        if found.grid != "single_phase":
-            b.issue(
-                "unsupported",
-                f"{node.id}: el inversor {found.component_id} es trifásico; por ahora el motor "
-                "solo diseña servicios monofásicos (ver la matriz de capacidades).",
-                node.id,
-            )
-            continue
+        # A three-phase inverter on a single-phase service is rule SRV-001's error.
+        accepted = {*found.rated_ac_voltage_v, found.max_ac_current_reference_voltage_v}
         spec_inverter = adapters.to_spec_inverter(
             found,
             ac_voltage_v=utility.nominal_voltage_v,
-            phases=phases,
+            phases=inverter_phases(
+                utility.system,
+                found.grid == "three_phase",
+                line_to_line=any(
+                    v is not None and abs(v - utility.nominal_voltage_v) <= 20 for v in accepted
+                ),
+            ),
             optimizers_on_all_modules=bool(node.values.get("optimizers_on_all_modules", False)),
             ocpd_max_a=bos.ac_ocpd_rating_a(found.max_ac_output_current_a, tables),
         )
@@ -776,7 +776,8 @@ def _ac_side(
         # role, backfed and at come from the connections (derived fields, ENG-013).
         entry["role"] = "I1"
         entry["backfed"] = True
-        entry.setdefault("poles", phases)
+        # The breaker opens every energized conductor of the inverters it protects.
+        entry.setdefault("poles", max((i["phases"] for i in fed_specs), default=phases))
         entry.setdefault("voltage_v", AC_BREAKER_VOLTAGE_V)
         if inverter is not None and "rating_a" not in entry:
             rating = bos.ac_ocpd_rating_a(iac_a, tables)
@@ -1148,7 +1149,7 @@ def _circuits(
                 owner=inverter["id"],
                 t_amb=t_amb,
                 standards=standards,
-                phases=phases,
+                phases=inverter["phases"],
                 tables=tables,
             )
         if runs.junction is not None:
@@ -1166,7 +1167,7 @@ def _circuits(
                 owner=runs.junction,
                 t_amb=t_amb,
                 standards=standards,
-                phases=phases,
+                phases=max(i["phases"] for i in string_inverters),
                 tables=tables,
             )
     spec["circuits"] = circuits

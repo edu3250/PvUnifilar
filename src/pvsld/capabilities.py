@@ -20,7 +20,7 @@ MAX_STRINGS = 4
 SUPPORTED_INVERTER_TYPES = frozenset({"string", "hybrid", "micro"})
 MAX_MICRO_MODELS = 1
 INVERTER_DC_PORTS = ("A", "B", "C", "D")
-SUPPORTED_SYSTEMS = ("1F-2H", "2F-3H")
+SUPPORTED_SYSTEMS = ("1F-2H", "2F-3H", "3F-4H")
 
 Status = Literal["supported", "pending"]
 
@@ -147,7 +147,10 @@ CAPABILITIES: tuple[Capability, ...] = (
         "utility.system",
         "Servicio",
         "supported",
-        f"Monofásico en baja tensión ({', '.join(SUPPORTED_SYSTEMS)}); trifásico pendiente.",
+        f"Baja tensión: {', '.join(SUPPORTED_SYSTEMS)} (3F-4H 220/127 V con inversores "
+        "trifásicos, o monofásicos entre dos fases con aviso de desbalance, SRV-001). El "
+        "dimensionamiento automático y el plano A3 todavía usan servicios monofásicos; "
+        "microinversores en 3F-4H pendientes.",
     ),
     Capability(
         "utility.voltage_level",

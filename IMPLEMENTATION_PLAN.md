@@ -1081,7 +1081,15 @@ strings (A, B, C, D order); the A3 sheet refuses C and D with a clear message.
 **Status**: In Progress
 
 ##### Stage 3.13.2: three-phase service (engine and editor)
-**Status**: Not Started
+**Goal**: 3F-4H 220/127 V in the editor's drawings (`SERVICE_PHASES`; the sizing engine keeps
+1F-2H and 2F-3H): `inverter_phases` gives 3 for a three-phase inverter and L-L (2) for a
+single-phase one on 3F-4H; the shared breaker opens every live conductor (3 poles; no 3-pole
+catalogue breaker: the rating stays without a model, a choices warning); circuits with three
+phases + neutral (ccc 3) and the sqrt(3) drop; new rule SRV-001 (three-phase inverter on a
+single-phase service: error; single-phase inverter on 3F-4H: imbalance warning); the palette
+marks three-phase inverters designable; micros on 3F-4H stay unsupported.
+**Tests**: tests/test_three_phase.py (Solis S5-GC 20 kW, 3 MPPT).
+**Status**: In Progress
 
 ---
 
