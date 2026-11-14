@@ -1415,12 +1415,16 @@ def build_schematic(spec: PvSystemSpec, derived: Derived, placement: Placement) 
             "calcula."
         )
     inverter = spec.inverters[0]
-    if len(spec.strings) > 2:
-        raise LayoutError(f"template {TEMPLATE} draws at most two strings, got {len(spec.strings)}")
     allowed = {p.id for p in get_symbol("PVSLD_INV").ports if p.kind == "DC"}
     for string in spec.strings:
         if string.mppt not in allowed:
-            raise LayoutError(f"string {string.id}: MPPT {string.mppt!r} has no port in the symbol")
+            raise LayoutError(
+                f"El plano A3 todavía dibuja las entradas A y B del inversor; la cadena "
+                f"{string.id} llega a la entrada {string.mppt} (llega en la siguiente versión). "
+                "El diseño sí se valida y se calcula."
+            )
+    if len(spec.strings) > 2:
+        raise LayoutError(f"template {TEMPLATE} draws at most two strings, got {len(spec.strings)}")
     i1, i2, meter, panel = _key_devices(spec)
 
     # Components, in drawing order.

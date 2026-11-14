@@ -394,6 +394,72 @@ INVERTER = _spec(
     ),
 )
 
+MAX_INVERTER_MPPT = 4
+TOP_MPPT_IDS = ("C", "D")
+"""Inputs on the top side of the inverter (owner decision 2026-11-14): A and B stay left."""
+
+
+def inverter_name(n_mppt: int) -> str:
+    """Block of a string inverter with ``n_mppt`` MPPT inputs: ``PVSLD_INV`` for one or two,
+    ``PVSLD_INV_3MPPT`` / ``PVSLD_INV_4MPPT`` with C (and D) on top."""
+    return "PVSLD_INV" if n_mppt <= 2 else f"PVSLD_INV_{n_mppt}MPPT"
+
+
+def inverter_mppt(n_mppt: int) -> SymbolSpec:
+    """The string inverter with 3 or 4 MPPT inputs: A and B on the left as in ``PVSLD_INV``, C
+    (and D) on the top side, symmetric about the centre like the earth below (owner decision
+    2026-11-14). The texts move to the upper right so the top inputs do not cross them.
+
+    Raises:
+        ValueError: ``n_mppt`` is not 3 or 4.
+    """
+    if n_mppt not in (3, 4):
+        raise ValueError(f"the generated inverter has 3 or 4 MPPT inputs, not {n_mppt}")
+    tops = (15.0,) if n_mppt == 3 else (10.0, 20.0)
+    labels = tuple(
+        Label(_r(x - 1.0), 11.5, TEXT_HEIGHT_MM, TOP_MPPT_IDS[i]) for i, x in enumerate(tops)
+    )
+    return _spec(
+        inverter_name(n_mppt),
+        f"Inversor de red de cadena de {n_mppt} MPPT",
+        SOURCE_CFE_C,
+        _EQ_AC,
+        (*INVERTER.geometry, *labels),
+        (
+            Port("A", 0, 10, "left", "DC"),
+            Port("B", 0, -10, "left", "DC", required=False),
+            *(Port(TOP_MPPT_IDS[i], x, 15, "up", "DC", required=False) for i, x in enumerate(tops)),
+            Port("AC", 30, 0, "right", "AC"),
+            Port("PE", 15, -15, "down", "PE"),
+        ),
+        iec_ref="IEC 60617 S00896",
+        tag_xy=(32, 29),
+        desc_xy=(32, 25),
+        extra=(
+            AttDef("MFR", "Fabricante", 32, 21),
+            AttDef("MODEL", "Modelo", 32, 17),
+            *_hidden(
+                ("PAC_W", "Potencia CA nominal (W)"),
+                ("VAC_V", "Tensión CA nominal (V)"),
+                ("PHASES", "Conductores energizados"),
+                ("IAC_MAX_A", "Corriente CA máxima (A)"),
+                ("VDC_MAX_V", "Tensión CD máxima (V)"),
+                ("MPPT_N", "Número de MPPT"),
+                ("OCPD_MAX_A", "Protección máxima CA (A)"),
+                ("ISOLATION", "Aislamiento"),
+                ("DC_SWITCH", "Desconectador CD integrado"),
+                ("DC_SPD", "DPS CD integrado"),
+            ),
+        ),
+        nmx_ref="NMX-J-136-ANCE-2019 4.2.357",
+        family=F_CONV,
+        note=(
+            "PVSLD_INV with the third and fourth MPPT inputs on the top side (C, D), symmetric "
+            "about the centre; the texts sit at the upper right. Generated on demand."
+        ),
+    )
+
+
 METER = _spec(
     "PVSLD_METER",
     "Medidor de energía bidireccional",
@@ -2433,6 +2499,7 @@ _COMBINER_NAME = re.compile(r"PVSLD_COMBINER_([1-9][0-9]?)S")
 _PV_STRING_NAME = re.compile(r"PVSLD_PV_STRING_([1-9][0-9]?)M_(UP|DN)")
 _DC_DISCONNECT_NAME = re.compile(r"PVSLD_DC_DISCONNECT_([1-9][0-9]?)S")
 _MICROINVERTER_NAME = re.compile(r"PVSLD_MICROINV_([1-9])IN")
+_INVERTER_MPPT_NAME = re.compile(r"PVSLD_INV_([34])MPPT")
 GENERATED: Mapping[str, SymbolSpec] = {AC_JUNCTION_BOX.name: AC_JUNCTION_BOX}
 """Fixed blocks the generator defines on demand that the legend does not list."""
 
@@ -2444,7 +2511,8 @@ def get_symbol(name: str) -> SymbolSpec:
     ``n`` strings (:func:`combiner_box`) and ``PVSLD_PV_STRING_<n>M_UP|DN`` a string with its
     ``n`` modules drawn (:func:`pv_string`) and ``PVSLD_DC_DISCONNECT_<n>S`` the DC disconnect
     of ``n`` strings (:func:`dc_disconnect_multi`), ``PVSLD_MICROINV_<n>IN`` a microinverter
-    with ``n`` inputs (:func:`microinverter`) and :data:`GENERATED` the fixed blocks outside the
+    with ``n`` inputs (:func:`microinverter`), ``PVSLD_INV_<n>MPPT`` a string inverter with 3
+    or 4 MPPT inputs (:func:`inverter_mppt`) and :data:`GENERATED` the fixed blocks outside the
     legend (``PVSLD_AC_JBOX``); the generator defines them on demand.
 
     Raises:
@@ -2466,6 +2534,9 @@ def get_symbol(name: str) -> SymbolSpec:
     match = _MICROINVERTER_NAME.fullmatch(name)
     if match and 1 <= int(match.group(1)) <= MAX_MICRO_INPUTS:
         return microinverter(int(match.group(1)))
+    match = _INVERTER_MPPT_NAME.fullmatch(name)
+    if match:
+        return inverter_mppt(int(match.group(1)))
     if name in GENERATED:
         return GENERATED[name]
     raise KeyError(f"unknown symbol {name!r}; library has {', '.join(SYMBOLS)}")
