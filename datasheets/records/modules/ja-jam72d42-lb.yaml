@@ -22,13 +22,13 @@ junction_box: IP68, 3 diodes
 connector: QC 4.10-351 / MC4-EVO2A
 cable_mm2: 4.0
 certifications: [IEC 61215, IEC 61730, UL 61215, UL 61730, "ISO 9001: 2015", "ISO 14001: 2015", "ISO 45001: 2018", "IEC 62941: 2019"]
-variants:   # STC (1000 W/m², 25 °C, AM1.5); bnpi = 10 % rear/front irradiation table
-  - {component_id: JA-JAM72D42-625-LB, pmax_w: 625, vmp_v: 43.71, imp_a: 14.30, voc_v: 52.27, isc_a: 15.16, efficiency_pct: 22.4, bnpi: {pmax_w: 675, vmp_v: 43.71, imp_a: 15.44, voc_v: 52.27, isc_a: 16.37}}
-  - {component_id: JA-JAM72D42-630-LB, pmax_w: 630, vmp_v: 43.90, imp_a: 14.35, voc_v: 52.47, isc_a: 15.21, efficiency_pct: 22.5, bnpi: {pmax_w: 680, vmp_v: 43.90, imp_a: 15.50, voc_v: 52.47, isc_a: 16.43}}
-  - {component_id: JA-JAM72D42-635-LB, pmax_w: 635, vmp_v: 44.10, imp_a: 14.40, voc_v: 52.67, isc_a: 15.26, efficiency_pct: 22.7, bnpi: {pmax_w: 686, vmp_v: 44.10, imp_a: 15.55, voc_v: 52.67, isc_a: 16.48}}
-  - {component_id: JA-JAM72D42-640-LB, pmax_w: 640, vmp_v: 44.29, imp_a: 14.45, voc_v: 52.87, isc_a: 15.31, efficiency_pct: 22.9, bnpi: {pmax_w: 691, vmp_v: 44.29, imp_a: 15.61, voc_v: 52.87, isc_a: 16.53}}
-  - {component_id: JA-JAM72D42-645-LB, pmax_w: 645, vmp_v: 44.49, imp_a: 14.50, voc_v: 53.07, isc_a: 15.36, efficiency_pct: 23.1, bnpi: {pmax_w: 697, vmp_v: 44.49, imp_a: 15.66, voc_v: 53.07, isc_a: 16.59}}
-  - {component_id: JA-JAM72D42-650-LB, pmax_w: 650, vmp_v: 44.67, imp_a: 14.55, voc_v: 53.27, isc_a: 15.41, efficiency_pct: 23.3, bnpi: {pmax_w: 702, vmp_v: 44.67, imp_a: 15.71, voc_v: 53.27, isc_a: 16.64}}
+variants:   # STC (1000 W/m², 25 °C, AM1.5); bnpi computed from STC (BNPI not printed)
+  - {component_id: JA-JAM72D42-625-LB, pmax_w: 625, vmp_v: 43.71, imp_a: 14.30, voc_v: 52.27, isc_a: 15.16, efficiency_pct: 22.4, bnpi: {pmax_w: 693, vmp_v: 43.71, imp_a: 15.84, voc_v: 52.27, isc_a: 16.80}}
+  - {component_id: JA-JAM72D42-630-LB, pmax_w: 630, vmp_v: 43.90, imp_a: 14.35, voc_v: 52.47, isc_a: 15.21, efficiency_pct: 22.5, bnpi: {pmax_w: 698, vmp_v: 43.90, imp_a: 15.90, voc_v: 52.47, isc_a: 16.85}}
+  - {component_id: JA-JAM72D42-635-LB, pmax_w: 635, vmp_v: 44.10, imp_a: 14.40, voc_v: 52.67, isc_a: 15.26, efficiency_pct: 22.7, bnpi: {pmax_w: 704, vmp_v: 44.10, imp_a: 15.96, voc_v: 52.67, isc_a: 16.91}}
+  - {component_id: JA-JAM72D42-640-LB, pmax_w: 640, vmp_v: 44.29, imp_a: 14.45, voc_v: 52.87, isc_a: 15.31, efficiency_pct: 22.9, bnpi: {pmax_w: 709, vmp_v: 44.29, imp_a: 16.01, voc_v: 52.87, isc_a: 16.96}}
+  - {component_id: JA-JAM72D42-645-LB, pmax_w: 645, vmp_v: 44.49, imp_a: 14.50, voc_v: 53.07, isc_a: 15.36, efficiency_pct: 23.1, bnpi: {pmax_w: 715, vmp_v: 44.49, imp_a: 16.07, voc_v: 53.07, isc_a: 17.02}}
+  - {component_id: JA-JAM72D42-650-LB, pmax_w: 650, vmp_v: 44.67, imp_a: 14.55, voc_v: 53.27, isc_a: 15.41, efficiency_pct: 23.3, bnpi: {pmax_w: 720, vmp_v: 44.67, imp_a: 16.12, voc_v: 53.27, isc_a: 17.07}}
 source:
   filename: Bifacial PV Module 625W JA Solar Deep Blue 4.0.pdf
   sha256: 6c01b9c625ca0d4f52564d65ac30a7455c25a6eb3a92c7f0b73e4696b2266235
@@ -36,11 +36,13 @@ source:
   pages: [2]
   extraction_method: pdf_text_layer
   extraction_date: 2026-11-14
-  reviewed_by: null
-  review_date: null
+  reviewed_by: claude
+  review_date: 2026-11-14
   notes: >-
-    Datasheet supplied by the owner. BNPI values are the 10% rear/front irradiation table as
-    printed; its Voc and Vmp rows equal the STC table. Bifaciality is printed as 80%±5%
+    Datasheet supplied by the owner. bnpi computed from STC with k = 1 + 0.135 × φ = 1.108 (BNPI not printed;
+    φ = 0.80 from the printed Pmax bifaciality, Isc bifaciality not printed). The sheet's only
+    rear table (10 % rear/front irradiation) is below BNPI and is not used (reviewer correction,
+    owner rule 2026-11-14). Bifaciality is printed as 80%±5%
     (pmax only). NOCT is printed as 45±2 °C; the sheet has no NOCT electrical table. The model
     suffix "/LB" is written "-LB" in component_id because ids allow only letters, digits, ".",
     "_" and "-".
