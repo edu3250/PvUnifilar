@@ -18,6 +18,8 @@ What is drawn:
   (its length and size), and the ``ac_combiner`` group (branch breakers, a chain of junctions as
   the bus, the AC SPD) with its main breaker outside.
 * **Service.** The load centre, the service main, the meter, the grid and the ground electrodes.
+  Without a load centre (schema 0.3.0): inverter, I1, service breaker I2, meter, grid (or one
+  breaker as I1 and I2); the electrodes go to the inverter's earth.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from typing import Any
 from pvsld.catalogue import ComponentRegistry, Microinverter
 from pvsld.catalogue import Inverter as CatalogueInverter
 from pvsld.catalogue import PVModule as CatalogueModule
-from pvsld.graph import FORMAT
+from pvsld.graph import FORMAT, inverter_breaker_id
 from pvsld.resources import data_path
 from pvsld.sizing import adapters
 from pvsld.sizing.dcbox import dc_box
@@ -47,6 +49,8 @@ DRAWN_SECTIONS = (
 )
 """Sections the drawing rebuilds; the template keeps the rest."""
 GRID_ID = "RED-1"
+_MAIN_DERIVED = ("id", "role", "bidirectional", "plant_disconnect")
+"""Service-breaker fields the drawing does not hold (the template and the topology give them)."""
 
 
 @dataclass(frozen=True)
@@ -136,7 +140,9 @@ def spec_to_graph(
     by_from = {c["from"].split(".", 1)[0]: c for c in spec.get("circuits", [])}
     ac = spec.get("ac_bos") or {}
     ocpds = {o["id"]: o for o in ac.get("ocpds", [])}
-    panel_id = (ac.get("point_of_connection") or {}).get("panel") or "CC-1"
+    poc = ac.get("point_of_connection") or {}
+    no_panel = bool(poc) and not poc.get("panel") and not ac.get("panels")
+    panel_id = poc.get("panel") or "CC-1"
     modules = {m["id"]: m for m in spec.get("modules", [])}
     module_refs = {
         mid: d.catalogue_id(CatalogueModule, m["manufacturer"], m["model"])
@@ -165,25 +171,42 @@ def spec_to_graph(
         )
     _dc_side(d, spec, circuits, registry)
 
-    itm_id = (ac.get("point_of_connection") or {}).get("breaker")
+    itm_id = inverter_breaker_id(ac)
+    mains = {m["id"]: m for m in ac.get("main_breakers", [])}
+    service_main = poc.get("breaker") if no_panel else None
     for inverter in spec.get("inverters", []):
         if inverter.get("type") == "micro" or not itm_id:
             continue
-        breaker(itm_id)
+        if itm_id in mains:  # one breaker as I1 and I2 (schema 0.3.0)
+            d.node(itm_id, "ac_breaker", **_values(mains[itm_id], _MAIN_DERIVED))
+        else:
+            breaker(itm_id)
         d.cable(
             f"{inverter['id']}.AC", f"{itm_id}.IN", **_circuit_extra(by_from.get(inverter["id"]))
         )
-        d.cable(f"{itm_id}.OUT", f"{panel_id}.LEFT")
+        if not no_panel:
+            d.cable(f"{itm_id}.OUT", f"{panel_id}.LEFT")
+        elif service_main and service_main != itm_id:
+            d.cable(f"{itm_id}.OUT", f"{service_main}.IN")
+    if no_panel and spec.get("ac_branches"):
+        d.issues.append(
+            "Los microinversores sin centro de carga todavía no se dibujan en el editor."
+        )
 
     # Microinverters.
     _micro_side(d, spec, by_from, ocpds, panel_id, module_refs, breaker)
 
     # Service.
-    panel = next((p for p in ac.get("panels", []) if p["id"] == panel_id), {"id": panel_id})
-    d.node(panel_id, "load_centre", **_values(panel, ("id", "main_ocpd", "system")))
+    if not no_panel:
+        panel = next((p for p in ac.get("panels", []) if p["id"] == panel_id), {"id": panel_id})
+        d.node(panel_id, "load_centre", **_values(panel, ("id", "main_ocpd", "system")))
     for main in ac.get("main_breakers", []):
-        d.node(main["id"], "ac_breaker", **_values(main, ("id", "role", "bidirectional")))
-        d.cable(f"{panel_id}.RIGHT", f"{main['id']}.IN")
+        if no_panel and main["id"] != service_main:
+            continue
+        if main["id"] not in {n["id"] for n in d.nodes}:
+            d.node(main["id"], "ac_breaker", **_values(main, _MAIN_DERIVED))
+        if not no_panel:
+            d.cable(f"{panel_id}.RIGHT", f"{main['id']}.IN")
         upstream = f"{main['id']}.OUT"
         for meter in ac.get("meters", []):
             d.node(meter["id"], "meter", **_values(meter, ("id",)))
@@ -195,7 +218,13 @@ def spec_to_graph(
     for index, electrode in enumerate((spec.get("grounding") or {}).get("electrodes", []), 1):
         electrode_id = f"TE-{index}"
         d.node(electrode_id, "ground_electrode", **_values(electrode, ()))
-        d.cable(f"{electrode_id}.PE", f"{panel_id}.PE")
+        earth = f"{panel_id}.PE"
+        if no_panel:
+            first = next((i for i in spec.get("inverters", []) if i.get("type") != "micro"), None)
+            if first is None:
+                continue
+            earth = f"{first['id']}.PE"
+        d.cable(f"{electrode_id}.PE", earth)
 
     template = {k: copy.deepcopy(v) for k, v in spec.items() if k not in DRAWN_SECTIONS}
     if "ac_bos" in template:

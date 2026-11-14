@@ -989,7 +989,33 @@ micro or trunk cell; an older sheet without the rows stays a string design.
 **Goal**: `microinverters` / `ac_combiner` on the MCP sizing and design tools; server instructions,
 skills (diagrama, pro, catalogo), README and user guide; then release 0.9.0 and notify the editor.
 **Tests**: tests/test_mcp_micro.py.
-**Status**: Complete (PR #82); release 0.9.0 in progress
+**Status**: Complete (PR #82); released as v0.9.0 (2026-11-08)
+
+#### Stage 3.11: Service without a load centre (approved by the owner 2026-11-13)
+Owner 2026-11-13: neither the NOM nor the CRE require drawing a load centre; the RES/142/2017
+schemes (Anexo II) draw plant, I1, the service breaker I2, the meter MF and the grid, and scheme (b)
+has no load centre. One breaker may be both I1 and I2, with a warning; an I2 drawn without its
+`bidirectional` value is assumed bidirectional and listed as filled (option a). Out of scope:
+several inverters on one breaker, supply-side connection (705-12(a)), micros without a load centre.
+
+##### Stage 3.11.1: engine and editor
+**Goal**: schema 0.3.0 (0.1.0/0.2.0 unchanged): `ac_bos.panels` may be empty and
+`point_of_connection.panel` left out (the point of interconnection is then the I2 breaker);
+`main_breakers[].plant_disconnect` (also I1) with manual/visible/lockable; PCC-002 only with a load
+centre; DIS-003 accepts the service breaker as I1; new warning DIS-005 (one breaker as I1 and I2);
+`graph_to_spec` finds I2 as the last breaker before the meter (or grid), moves the template's AC
+SPD to it and drops undrawn template panels/mains; `spec_to_graph` round trip; CON-003 checks
+C-INV against a service breaker that is also I1; capability `service.no_load_centre` supported,
+`drawing.no_load_centre` pending (the A3 sheet refuses such designs with a clear message).
+**Tests**: tests/test_no_load_centre.py; every existing design unchanged.
+**Status**: In Progress
+
+##### Stage 3.11.2: plugin on par, release 0.10.0
+**Goal**: sizing options "without load centre" and "one breaker as I1 and I2" (only on request),
+a project-sheet row, the A3 sheet drawing inverter -> ITM-1 (I1) -> ITM-P (I2) -> meter -> grid or
+one breaker labelled "I1 / I2", memoria texts, MCP tools and skills, user guide; release 0.10.0
+and notify the editor.
+**Status**: Not Started
 
 ---
 

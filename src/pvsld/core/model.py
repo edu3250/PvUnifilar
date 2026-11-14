@@ -1,4 +1,4 @@
-"""Pydantic v2 parameter model (schema_version 0.1.0 / 0.2.0) of a photovoltaic installation.
+"""Pydantic v2 parameter model (schema_version 0.1.0 / 0.2.0 / 0.3.0) of a PV installation.
 
 This is the single source of truth of the pipeline (ADR-0001, layer L2): inputs only. Anything
 computable (maximum string voltage, design currents, voltage drop, ...) is derived in
@@ -35,7 +35,11 @@ SCHEMA_VERSION = "0.1.0"
 """Version written into string-inverter designs (unchanged by schema 0.2.0)."""
 MICRO_SCHEMA_VERSION = "0.2.0"
 """First version with microinverters (``ac_branches``); a design that uses them declares it."""
-SCHEMA_VERSIONS = (SCHEMA_VERSION, MICRO_SCHEMA_VERSION)
+SERVICE_SCHEMA_VERSION = "0.3.0"
+"""First version where the load centre may be left out: the service breaker I2 is the point of
+interconnection, and one breaker may be both I1 and I2 (RES/142/2017 schemes, owner 2026-11-13)."""
+SCHEMA_VERSIONS = (SCHEMA_VERSION, MICRO_SCHEMA_VERSION, SERVICE_SCHEMA_VERSION)
+LATEST_SCHEMA_VERSION = SERVICE_SCHEMA_VERSION
 NO_ARRAY_PROBLEM = "the design needs at least one string or one AC branch"
 RULEPACK_ID = "mx-gd-2026.10"
 NOM_EDITION = "NOM-001-SEDE-2012"
@@ -382,6 +386,16 @@ class MainBreaker(_Strict):
     poles: PositiveInt
     rating_a: PositiveFloat
     bidirectional: bool = False
+    plant_disconnect: bool = Field(
+        default=False,
+        description="Schema 0.3.0: this service breaker is also the plant disconnect I1 (one "
+        "breaker for both; warning DIS-005)",
+    )
+    manual: bool | None = Field(default=None, description="Manually operated (DIS-003, as I1)")
+    visible_break: bool | None = Field(
+        default=None, description="Visible open/closed position (DIS-003, as I1)"
+    )
+    lockable: bool | None = Field(default=None, description="Can be locked open (DIS-003, as I1)")
     kaic_ka: PositiveFloat | None = Field(
         default=None, description="Interrupting rating, when the breaker is known"
     )
@@ -393,7 +407,11 @@ class MainBreaker(_Strict):
 class PointOfConnection(_Strict):
     id: str = Field(min_length=1)
     type: Literal["supply_side", "load_side"]
-    panel: str
+    panel: str | None = Field(
+        default=None,
+        description="Load centre of the connection; schema 0.3.0 leaves it out when no load "
+        "centre is drawn (the point of interconnection is then the service breaker I2)",
+    )
     breaker: str
     position: Literal["opposite_end", "other"] = "opposite_end"
 
@@ -410,7 +428,9 @@ class AcBos(_Strict):
     ocpds: list[Ocpd] = Field(default_factory=list)
     disconnects: list[AcDisconnect] = Field(default_factory=list)
     spds: list[Spd] = Field(default_factory=list)
-    panels: list[Panel] = Field(min_length=1)
+    panels: list[Panel] = Field(
+        default_factory=list, description="At least one unless schema 0.3.0 leaves it out"
+    )
     main_breakers: list[MainBreaker] = Field(default_factory=list)
     point_of_connection: PointOfConnection
     meters: list[Meter] = Field(default_factory=list)
@@ -532,7 +552,7 @@ def _duplicates(ids: Iterable[str]) -> list[str]:
 class PvSystemSpec(_Strict):
     """Root of the parameter model: one PV installation and the sheet that documents it."""
 
-    schema_version: Literal["0.1.0", "0.2.0"]
+    schema_version: Literal["0.1.0", "0.2.0", "0.3.0"]
     project: Project
     standards: Standards
     utility: Utility
@@ -556,6 +576,18 @@ class PvSystemSpec(_Strict):
     # Medium-voltage sections are accepted but not modelled in schema 0.1.0 (queued for ADR-0002).
     transformer: dict[str, Any] | None = None
     mt_protection: dict[str, Any] | None = None
+
+    def inverter_breaker_id(self) -> str:
+        """The breaker of the string inverter's output (I1): the backfed I1 breaker, else the
+        service breaker that is also I1 (schema 0.3.0), else the point-of-connection breaker."""
+        ac = self.ac_bos
+        for ocpd in ac.ocpds:
+            if ocpd.role == "I1" and ocpd.backfed:
+                return ocpd.id
+        for main in ac.main_breakers:
+            if main.plant_disconnect:
+                return main.id
+        return ac.point_of_connection.breaker
 
     def component_ids(self) -> list[str]:
         """Every identifier that can be a circuit endpoint or a drawing component."""
@@ -631,10 +663,11 @@ class PvSystemSpec(_Strict):
             if panel.main_ocpd not in breakers:
                 problems.append(f"panel {panel.id}: unknown main_ocpd {panel.main_ocpd!r}")
         poc = self.ac_bos.point_of_connection
-        if poc.panel not in panels:
+        if poc.panel is not None and poc.panel not in panels:
             problems.append(f"point_of_connection: unknown panel {poc.panel!r}")
         if poc.breaker not in breakers:
             problems.append(f"point_of_connection: unknown breaker {poc.breaker!r}")
+        problems += self._service_problems()
         for ocpd in self.ac_bos.ocpds:
             if ocpd.at is not None and _base_id(ocpd.at) not in known:
                 problems.append(f"ocpd {ocpd.id}: unknown location {ocpd.at!r}")
@@ -651,12 +684,50 @@ class PvSystemSpec(_Strict):
             raise ValueError("; ".join(problems))
         return self
 
+    def _service_problems(self) -> list[str]:
+        """Schema 0.3.0: no load centre, and one breaker as I1 and I2."""
+        ac = self.ac_bos
+        poc = ac.point_of_connection
+        problems: list[str] = []
+        new = self.schema_version == SERVICE_SCHEMA_VERSION
+        if not ac.panels and not new:
+            problems.append(
+                f"ac_bos.panels needs at least one load centre before schema_version "
+                f"{SERVICE_SCHEMA_VERSION!r}"
+            )
+        if poc.panel is None:
+            if not new:
+                problems.append(
+                    f"point_of_connection.panel is required before schema_version "
+                    f"{SERVICE_SCHEMA_VERSION!r}"
+                )
+            if ac.panels:
+                problems.append(
+                    "point_of_connection: name its panel (the design declares a load centre)"
+                )
+            if poc.breaker not in {b.id for b in ac.main_breakers if b.role == "I2"}:
+                problems.append(
+                    f"point_of_connection: without a load centre its breaker {poc.breaker!r} "
+                    "must be the service breaker I2 in ac_bos.main_breakers"
+                )
+        for breaker in ac.main_breakers:
+            if breaker.plant_disconnect and not new:
+                problems.append(
+                    f"main breaker {breaker.id}: plant_disconnect needs schema_version "
+                    f"{SERVICE_SCHEMA_VERSION!r}"
+                )
+            if breaker.plant_disconnect and breaker.role != "I2":
+                problems.append(
+                    f"main breaker {breaker.id}: plant_disconnect is for the service breaker I2"
+                )
+        return problems
+
     def _branch_problems(self, modules: set[str], inverters: Mapping[str, Inverter]) -> list[str]:
         """Cross references of ``ac_branches`` and ``ac_combiner`` (schema 0.2.0)."""
         if not self.ac_branches:
             return ["ac_combiner needs ac_branches"] if self.ac_combiner is not None else []
         problems: list[str] = self._combiner_problems()
-        if self.schema_version != MICRO_SCHEMA_VERSION:
+        if self.schema_version == SCHEMA_VERSION:
             problems.append(
                 f"ac_branches needs schema_version {MICRO_SCHEMA_VERSION!r} "
                 f"(got {self.schema_version!r})"

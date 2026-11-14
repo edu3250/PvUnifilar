@@ -689,6 +689,11 @@ def build_sheet_diagram(
 
     if spec.layout.template != TEMPLATE:
         raise LayoutError(f"unsupported layout template {spec.layout.template!r}")
+    if spec.ac_bos.point_of_connection.panel is None:
+        raise LayoutError(
+            "El plano A3 todavía no dibuja un diseño sin centro de carga (llega en la siguiente "
+            "versión). El diseño sí se valida y se calcula."
+        )
     derived = derived or calc.derive(spec)
     schedule = _protections(spec)
     micro = bool(spec.ac_branches)

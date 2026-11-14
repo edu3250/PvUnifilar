@@ -44,7 +44,7 @@ def test_types_are_the_ones_the_engine_calculates(palette: Palette) -> None:
     assert len({t.type_id for t in palette.types}) == len(palette.types) == 19
     assert palette.format == FORMAT
     assert palette.library_version == LIBRARY_VERSION
-    assert palette.schema_version == spec_model.MICRO_SCHEMA_VERSION
+    assert palette.schema_version == spec_model.LATEST_SCHEMA_VERSION
 
 
 @pytest.mark.parametrize("definition", TYPES, ids=lambda t: t.type_id)

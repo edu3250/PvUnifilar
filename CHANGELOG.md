@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A design without a load centre (schema 0.3.0, the RES/142/2017 schemes, owner approval 2026-11-13): `ac_bos.panels` may be empty and `point_of_connection.panel` left out, the point of interconnection being the service breaker I2; `main_breakers[].plant_disconnect` marks one breaker as both I1 and I2, with the new warning DIS-005; PCC-002 (120 % busbar) runs only with a load centre. The editor's drawing inverter -> ITM -> ITM -> meter -> grid becomes such a design (the last breaker before the meter is I2; an I2 drawn without `bidirectional` is assumed bidirectional and listed as filled), and `spec_to_graph` draws it back. Capability `service.no_load_centre`; the A3 sheet does not draw it yet (`drawing.no_load_centre` pending). Specifications 0.1.0 and 0.2.0 are unchanged; the palette reports schema 0.3.0.
+
 ## [0.9.1] - 2026-11-13
 
 ### Changed

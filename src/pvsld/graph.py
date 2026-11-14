@@ -16,6 +16,11 @@ specification, deducing from the cables what the specification otherwise states 
 * the DC box parts (``FUS-``/``DCB-``/``DCD-CD1``/the SPD), each checked to sit on its string;
 * the AC chain: the breaker the inverter feeds is ITM-1, the load centre it reaches is the point
   of connection, a breaker between the load centre and the meter or grid is the service main.
+  Without a load centre (schema 0.3.0, the RES/142/2017 schemes): the last breaker before the
+  meter (or the grid) is the service breaker I2 and the point of interconnection; when ITM-1 is
+  that last breaker, it is both I1 and I2 (warning DIS-005). An I2 drawn without its
+  ``bidirectional`` value is assumed bidirectional and listed in :attr:`GraphResult.filled`
+  (owner decision 2026-11-13).
 
 **Values not drawn.** Lengths take the engine's defaults (25 m DC, 30 m AC, 25 mm rooftop
 clearance: owner decision 2026-11-03), and conductor sizes, raceways, ITM-1 and box parts take the
@@ -57,7 +62,15 @@ from pvsld.catalogue import Inverter as CatalogueInverter
 from pvsld.catalogue import PVModule as CatalogueModule
 from pvsld.core import calc
 from pvsld.core import micro as micro_rules
-from pvsld.core.model import MICRO_SCHEMA_VERSION, SCHEMA_VERSION, Site, Standards, Utility
+from pvsld.core.model import (
+    MICRO_SCHEMA_VERSION,
+    SCHEMA_VERSION,
+    SERVICE_SCHEMA_VERSION,
+    MainBreaker,
+    Site,
+    Standards,
+    Utility,
+)
 from pvsld.core.tables import get_tables
 from pvsld.resources import data_path
 from pvsld.sizing import adapters, bos
@@ -722,6 +735,7 @@ def _ac_side(
 
     breakers = {n.id: n for n in b.nodes.values() if n.type == "ac_breaker"}
     inverter_breakers: list[str] = list(on_micro_side)
+    without_panel = False
     for node in (n for n in b.nodes.values() if n.type == "inverter"):
         order, _parent = net.trace(f"{node.id}.AC")
         hit = [p.split(".", 1)[0] for p in order if p.split(".", 1)[0] in breakers]
@@ -776,7 +790,35 @@ def _ac_side(
             b.nodes[p.split(".", 1)[0]] for p in order if net.node_of(p).type == "load_centre"
         ]
         if not panel_nodes:
-            b.issue("topology", f"{itm.id} no llega a ningún centro de carga.", itm.id)
+            i2 = _service_breaker(net, itm.id, breakers)
+            if i2 is None:
+                b.issue(
+                    "topology",
+                    f"{itm.id} no llega a ningún centro de carga ni al medidor o la red.",
+                    itm.id,
+                )
+                continue
+            without_panel = True
+            single = i2 == itm.id
+            if single:  # one breaker as I1 and I2: it lives in main_breakers
+                ocpds.pop(index)
+                old, new = f"ac_bos.ocpds[{index}].", f"ac_bos.main_breakers[{len(mains)}]."
+                b.filled = [
+                    FilledValue(f.path.replace(old, new, 1), f.value, f.reason_es)
+                    if f.path.startswith(old)
+                    else f
+                    for f in b.filled
+                ]
+            else:
+                entry.pop("at", None)
+            main_index = _upsert_main(b, mains, breakers[i2], entry if single else {}, phases)
+            mains[main_index]["role"] = "I2"
+            if single:
+                mains[main_index]["plant_disconnect"] = True
+            b.mapped[i2] = f"ac_bos.main_breakers[{main_index}]"
+            poc.update({"panel": None, "breaker": i2})
+            poc.setdefault("id", "PI-1")
+            poc.setdefault("type", "load_side")
             continue
         panel = panel_nodes[0]
         entry["at"] = panel.id
@@ -799,6 +841,24 @@ def _ac_side(
                     mains[main_index]["role"] = "I2"
                     panels[index]["main_ocpd"] = other
                     b.mapped[other] = f"ac_bos.main_breakers[{main_index}]"
+    if without_panel and not any(n.type == "load_centre" for n in b.nodes.values()):
+        # The drawing is the truth: no load centre drawn, none in the specification; a service
+        # main of the template that is not drawn goes too.
+        dropped = {p.get("id") for p in panels}
+        panels = []
+        kept = [i for i, m in enumerate(mains) if m.get("id") in b.nodes]
+        moved = {old: new for new, old in enumerate(kept)}
+        mains = [mains[i] for i in kept]
+        b.filled = [_reindexed(f, "ac_bos.main_breakers", moved) for f in b.filled]
+        b.mapped = {
+            k: _reindexed_path(v, "ac_bos.main_breakers", moved) for k, v in b.mapped.items()
+        }
+        # An AC SPD of the template at the dropped load centre sits at the service breaker.
+        ac["spds"] = [
+            {**s, "at": poc["breaker"]} if str(s.get("at", "")).split(".", 1)[0] in dropped else s
+            for s in ac.get("spds") or []
+        ]
+        spec["schema_version"] = SERVICE_SCHEMA_VERSION
     for node in (n for n in b.nodes.values() if n.type == "meter"):
         index = upsert(meters, node)
         b.mapped[node.id] = f"ac_bos.meters[{index}]"
@@ -825,6 +885,71 @@ def _ac_side(
     ac.setdefault("disconnects", [])
     ac.setdefault("spds", [])
     spec["ac_bos"] = ac
+
+
+_MAIN_FIELDS = frozenset(MainBreaker.model_fields)
+
+
+def _reindexed_path(path: str, section: str, moved: Mapping[int, int]) -> str:
+    match = re.match(rf"^{re.escape(section)}\[(\d+)\](.*)$", path)
+    if match is None or int(match.group(1)) not in moved:
+        return path
+    return f"{section}[{moved[int(match.group(1))]}]{match.group(2)}"
+
+
+def _reindexed(filled: FilledValue, section: str, moved: Mapping[int, int]) -> FilledValue:
+    path = _reindexed_path(filled.path, section, moved)
+    return filled if path == filled.path else FilledValue(path, filled.value, filled.reason_es)
+
+
+def _service_breaker(net: _Net, itm_id: str, breakers: Mapping[str, GraphNode]) -> str | None:
+    """Without a load centre: the last breaker on the path from ``itm_id`` to the meter (or the
+    grid), ``itm_id`` itself when no other breaker sits between; ``None`` without meter or grid."""
+    order, parent = net.trace(f"{itm_id}.OUT")
+    end = next((p for p in order if net.node_of(p).type == "meter"), None) or next(
+        (p for p in order if net.node_of(p).type == "grid"), None
+    )
+    if end is None:
+        return None
+    on_path: list[str] = []
+    port = end
+    while port in parent:
+        port = parent[port][0]
+        node_id = port.split(".", 1)[0]
+        if node_id in breakers and node_id not in on_path:
+            on_path.append(node_id)
+    return on_path[0] if on_path else itm_id
+
+
+def _upsert_main(
+    b: _Builder,
+    mains: list[dict[str, Any]],
+    node: GraphNode,
+    base: Mapping[str, Any],
+    phases: int,
+) -> int:
+    """Put the service breaker ``node`` into ``mains`` (merged with its template entry and
+    ``base``, keeping only the main-breaker fields) and fill an undrawn ``bidirectional``."""
+    template = _template_item(mains, node.id)
+    merged = {
+        k: v
+        for k, v in {**base, **template, **node.values, "id": node.id}.items()
+        if k in _MAIN_FIELDS
+    }
+    merged.setdefault("poles", phases)
+    index = next((i for i, m in enumerate(mains) if m.get("id") == node.id), len(mains))
+    if index == len(mains):
+        mains.append(merged)
+    else:
+        mains[index] = merged
+    if "bidirectional" not in merged:
+        merged["bidirectional"] = b.fill(
+            f"ac_bos.main_breakers[{index}].bidirectional",
+            True,
+            "Se supone bidireccional: los termomagnéticos comunes de baja tensión lo son; "
+            "confírmelo con la ficha del interruptor (RES/142/2017, I2).",
+        )
+    return index
 
 
 def _circuits(
@@ -958,8 +1083,12 @@ def _circuits(
         )
 
     ac = spec.get("ac_bos") or {}
-    itm_id = (ac.get("point_of_connection") or {}).get("breaker")
-    itm = _template_item(ac.get("ocpds"), itm_id) if itm_id else {}
+    itm_id = inverter_breaker_id(ac)
+    itm = (
+        _template_item(ac.get("ocpds"), itm_id) or _template_item(ac.get("main_breakers"), itm_id)
+        if itm_id
+        else {}
+    )
     for inverter in spec["inverters"]:
         if not itm:
             break
@@ -1057,6 +1186,19 @@ def _circuits(
             CircuitCables("C-INV", "inverter_output", circuit["from"], itm_id, b.indices(path))
         )
     spec["circuits"] = circuits
+
+
+def inverter_breaker_id(ac: Mapping[str, Any]) -> str | None:
+    """The breaker of the string inverter's output (I1): the backfed I1 breaker, else the service
+    breaker that is also I1 (schema 0.3.0), else the point-of-connection breaker."""
+    for ocpd in ac.get("ocpds") or []:
+        if ocpd.get("role") == "I1" and ocpd.get("backfed"):
+            return str(ocpd["id"])
+    for main in ac.get("main_breakers") or []:
+        if main.get("plant_disconnect"):
+            return str(main["id"])
+    breaker = (ac.get("point_of_connection") or {}).get("breaker")
+    return str(breaker) if breaker else None
 
 
 def _inverter_path(b: _Builder, inverter_id: str, itm_id: str) -> list[GraphCable]:

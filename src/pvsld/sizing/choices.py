@@ -872,7 +872,7 @@ class _Evaluator:
         spec = self.spec
         if spec.ac_branches:
             return  # the branch breakers are checked by branch_breakers()
-        position = spec.ac_bos.point_of_connection.breaker
+        position = spec.inverter_breaker_id()
         ocpd = next((o for o in spec.ac_bos.ocpds if o.id == position), None)
         if ocpd is None or not spec.inverters:
             return

@@ -22,6 +22,7 @@ SUBSET = (
     "MET-001",
     "DIS-003",
     "DIS-004",
+    "DIS-005",
 )
 # Microinverter rules of schema 0.2.0 (Stage 3.9.3), after the S1 subset.
 MICRO = (
