@@ -33,7 +33,7 @@ from pvsld.catalogue import (
 from pvsld.catalogue import Inverter as CatalogueInverter
 from pvsld.catalogue import PVModule as CatalogueModule
 from pvsld.core import calc
-from pvsld.core.model import SCHEMA_VERSION, Standards
+from pvsld.core.model import SCHEMA_VERSION, Module, Standards
 from pvsld.core.severity import Severity
 from pvsld.core.tables import NomTables, get_tables
 from pvsld.core.validation import validate_pv_design
@@ -813,6 +813,15 @@ def size_pv_system(request: SizingRequest, registry: ComponentRegistry) -> Sizin
     ]
     if request.optimizers_on_all_modules:
         assumptions.append(OPTIMIZER_ASSUMPTION)
+    multi = _multi_candidates(
+        request, registry, module, spec_module, inverters, standards, target_w, candidates, rejected
+    )
+    if multi is not None and (multi or request.inverter_count or request.inverter_set):
+        candidates = multi
+        assumptions.append(MULTI_ASSUMPTION)
+    elif multi is not None:
+        # the automatic search found no valid design with several inverters: keep one
+        assumptions.append(MULTI_REJECTED_ASSUMPTION)
     return SizingResult(
         module_id=module.component_id,
         objective=OBJECTIVE,
@@ -822,6 +831,188 @@ def size_pv_system(request: SizingRequest, registry: ComponentRegistry) -> Sizin
         assumptions=tuple(assumptions),
         inverters_evaluated=tuple(inverter_ids),
     )
+
+
+MULTI_ASSUMPTION = (
+    "Varios inversores: sus salidas se unen en la caja de unión CJ-CA1 y llegan a un solo ITM "
+    "compartido de 1.25 × la suma de sus corrientes; cada tramo de inversor queda protegido por "
+    "ese ITM (decisión del propietario, 2026-11-13). Tramo de cada inversor a la caja: 5 m por "
+    "omisión."
+)
+
+
+def _fixed_bos(request: SizingRequest) -> bool:
+    """Whether the request fixes a protection, switch, breaker or cable of the design."""
+    return (
+        any(
+            choice != "auto"
+            for choice in (
+                request.dc_fuses,
+                request.dc_breakers,
+                request.dc_switches,
+                request.ac_breakers,
+                request.dc_cable,
+            )
+        )
+        or request.dc_ocpd != "always"
+        or request.main_breaker is not None
+        or not request.dc_fuse_fallback
+    )
+
+
+MULTI_REJECTED_ASSUMPTION = (
+    "Con varios inversores se habría llegado más cerca de la potencia pedida, pero ninguna "
+    "opción pasó las revisiones (ver «rejected»); se propone un solo inversor."
+)
+
+
+def _multi_candidates(
+    request: SizingRequest,
+    registry: ComponentRegistry,
+    module: CatalogueModule,
+    spec_module: Module,
+    inverters: list[CatalogueInverter],
+    standards: Standards,
+    target_w: float | None,
+    singles: list[Candidate],
+    rejected: list[Rejection],
+) -> list[Any] | None:
+    """Designs with several string inverters, or None to keep the single-inverter result.
+
+    ``inverter_set`` gives the units (mixed models); ``inverter_count`` > 1 fixes how many of
+    each model; otherwise, with a target, the fewest inverters whose best design comes within one
+    module of the best reachable one (owner 2026-11-13).
+    """
+    from pvsld.sizing import multi_sizing as ms
+
+    usable = [
+        i for i in inverters if _service_problem(i, request.utility.nominal_voltage_v) is None
+    ]
+
+    def best_units(count: int) -> list[tuple[CatalogueInverter, Evaluation]]:
+        """Each model's feasible unit configurations on 1/count of the request, best first."""
+        part_target = target_w / count if target_w is not None else None
+        found = [
+            (inverter, evaluation)
+            for inverter in usable
+            for evaluation in ms.unit_evaluations(
+                request, module, spec_module, inverter, standards, 1 / count
+            )
+        ]
+        found.sort(key=lambda item: _rank_key(item[1], item[0], part_target))
+        return found
+
+    fixed_note = (
+        (
+            Issue(
+                "GEN-004",
+                Severity.WARNING,
+                "Con varios inversores el motor elige del catálogo los equipos de la caja de CD, "
+                "el ITM compartido y los cables; los que se fijaron todavía no se aplican.",
+                subject="multi_inverter",
+            ),
+        )
+        if _fixed_bos(request)
+        else ()
+    )
+
+    def build(units_list: list[list[tuple[CatalogueInverter, Evaluation]]]) -> list[Any]:
+        built: list[Any] = []
+        for units in units_list:
+            if len(built) >= request.max_candidates:
+                break
+            spec, issues = ms.build_multi_spec(request, module, units, registry)
+            config = units[0][1].config
+            if spec is None:
+                rejected.append(Rejection(config, tuple(issues), "bos", units[0][1].metrics))
+                continue
+            report = validate_pv_design(spec, dc_ac_policy=request.dc_ac_policy)
+            if not report.ok:
+                rejected.append(
+                    Rejection(
+                        config,
+                        tuple(Issue.from_finding(f) for f in report.errors),
+                        "rule_pack",
+                        units[0][1].metrics,
+                    )
+                )
+                continue
+            breaker = spec["ac_bos"]["point_of_connection"]["breaker"]
+            ocpds = {o["id"]: o for o in spec["ac_bos"].get("ocpds", [])}
+            mains = {m["id"]: m for m in spec["ac_bos"].get("main_breakers", [])}
+            shared = next(
+                (o for o in ocpds.values() if o.get("role") == "I1"), mains.get(breaker, {})
+            )
+            built.append(
+                ms.MultiCandidate(
+                    rank=len(built) + 1,
+                    units=tuple(
+                        ms.InverterUnit(
+                            inverter.component_id,
+                            evaluation.config.n_strings,
+                            evaluation.config.n_series,
+                            evaluation.metrics.p_dc_w,
+                            inverter.rated_ac_power_w,
+                        )
+                        for inverter, evaluation in units
+                    ),
+                    breaker_a=float(shared.get("rating_a") or 0),
+                    issues=tuple(i for _inv, e in units for i in e.issues)
+                    + tuple(issues)
+                    + fixed_note,
+                    findings=report.findings,
+                    spec=spec,
+                    explanation_es=ms.explain_multi(
+                        units, singles[0].metrics.p_dc_w if singles else None
+                    ),
+                )
+            )
+        return built
+
+    if request.inverter_set:
+        chosen = [_lookup(registry, i, CatalogueInverter, "inverter") for i in request.inverter_set]
+        total_ac = sum(i.rated_ac_power_w for i in chosen)
+        units: list[tuple[CatalogueInverter, Evaluation]] = []
+        for inverter in chosen:
+            part = inverter.rated_ac_power_w / total_ac
+            options = ms.unit_evaluations(request, module, spec_module, inverter, standards, part)
+            if not options:
+                return []
+            part_target = target_w * part if target_w is not None else None
+            options.sort(key=lambda e, i=inverter: _rank_key(e, i, part_target))
+            units.append((inverter, options[0]))
+        return build([units])
+
+    count = request.inverter_count
+    if count == 1:
+        return None
+    if count is None:
+        # Fixed protections or cables (professional mode) are not carried into the designs with
+        # several inverters yet: the automatic search stays with one inverter then.
+        if target_w is None or _fixed_bos(request):
+            return None
+        best: dict[int, float] = {}
+        if singles:
+            best[1] = abs(singles[0].metrics.deliverable_dc_w - target_w)
+        for n in range(2, ms.MAX_AUTO_INVERTERS + 1):
+            found = best_units(n)
+            if found:
+                best[n] = abs(n * found[0][1].metrics.deliverable_dc_w - target_w)
+        if not best:
+            return None
+        closest = min(best.values())
+        count = min(n for n, gap in best.items() if gap <= closest + module.pmax_w)
+        if count == 1:
+            return None
+    found = best_units(count)
+    seen: set[tuple[str, int, int]] = set()
+    options: list[list[tuple[CatalogueInverter, Evaluation]]] = []
+    for inverter, evaluation in found:
+        key = (inverter.component_id, evaluation.config.n_strings, evaluation.config.n_series)
+        if key not in seen:
+            seen.add(key)
+            options.append([(inverter, evaluation)] * count)
+    return build(options)
 
 
 def _size_micro(

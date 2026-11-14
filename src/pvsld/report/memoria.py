@@ -152,6 +152,109 @@ def general_rows(spec: PvSystemSpec) -> list[tuple[str, str]]:
     ]
 
 
+def _shared_run_rows(
+    spec: PvSystemSpec,
+    derived: Derived,
+    run: Any,
+    put: Any,
+    calc: Any,
+    v: dict[str, float],
+    section: str,
+    factor: float,
+    itm_id: str,
+    tables: Any,
+) -> None:
+    """C-INVT, from the junction box to the shared breaker: every inverter's current."""
+    values = next(c for c in derived.circuits if c.circuit_id == run.id)
+    size = run.conductors.size
+    vac = spec.string_inverters()[0].vac_v
+    put(
+        "lenACT",
+        "Circuito CA",
+        "Longitud caja de unión → ITM",
+        run.length_m,
+        "m",
+        "Dato del proyecto",
+    )
+    put(
+        "rACT",
+        "Circuito CA",
+        f"Resistencia {size} (CA, C-INVT)",
+        tables.resistance_ac_pvc_ohm_km[size],
+        "Ω/km",
+        "NOM Cap. 10, Tabla 9",
+    )
+    put(
+        "a75ACT",
+        "Circuito CA",
+        f"Ampacidad {size} a 75 °C (C-INVT)",
+        values.ampacity_75_a,
+        "A",
+        "NOM 310-15(b)(16)",
+    )
+    put(
+        "a90ACT",
+        "Circuito CA",
+        f"Ampacidad {size} a 90 °C (C-INVT)",
+        values.ampacity_90_a,
+        "A",
+        "NOM 310-15(b)(16)",
+    )
+    put(
+        "kACT",
+        "Circuito CA",
+        "Factor por temperatura (C-INVT)",
+        values.k_temp or 1.0,
+        "—",
+        "NOM 310-15(b)(2)(a)",
+    )
+    put(
+        "fACT",
+        "Circuito CA",
+        "Factor por agrupamiento (C-INVT)",
+        values.k_fill or 1.0,
+        "—",
+        "NOM 310-15(b)(3)(a)",
+    )
+    calc(
+        "req75act",
+        section,
+        "C-INVT: ampacidad requerida a 75 °C",
+        "1.25*{iacsum}",
+        1.25 * v["iacsum"],
+        "A",
+        shown=f"1.25 × {_g(v['iacsum'])} A",
+        limit=f"≤ {_g(values.ampacity_75_a)} A ({size})",
+        check=("<=", "a75ACT"),
+        cite="CON-001",
+    )
+    calc(
+        "ampact",
+        section,
+        "C-INVT: ampacidad corregida a 90 °C",
+        "{a90ACT}*{kACT}*{fACT}",
+        values.ampacity_90_a * v["kACT"] * v["fACT"],
+        "A",
+        shown=f"{_g(values.ampacity_90_a)} A × {_g(v['kACT'])} × {_g(v['fACT'])}",
+        limit=f"≥ {_g(v['itm1'])} A (protegido por {itm_id})",
+        check=(">=", "itm1"),
+        cite="NOM 240-4, CON-003",
+    )
+    calc(
+        "vdact",
+        section,
+        "C-INVT: caída de tensión",
+        f"{factor:.6g}*{{lenACT}}/1000*{{rACT}}*{{iacsum}}/{{vac}}*100",
+        factor * run.length_m / 1000 * v["rACT"] * v["iacsum"] / vac * 100,
+        "%",
+        shown=f"{'√3' if factor != 2.0 else '2'} × {_g(run.length_m)} m × {_g(v['rACT'])} Ω/km × "
+        f"{_g(v['iacsum'])} A / {_g(vac)} V",
+        limit=f"≤ {_g(spec.standards.vd_limits_pct.ac)} %",
+        check=("<=", spec.standards.vd_limits_pct.ac),
+        cite="VD-002",
+    )
+
+
 def build_memoria(
     spec: PvSystemSpec,
     derived: Derived,
@@ -185,12 +288,27 @@ def build_memoria(
     kwp = derived.kwp_total
     m_name = f"{module.manufacturer} {module.model}"
     i_name = f"{inv.manufacturer} {inv.model}"
+    # Several string inverters on one shared breaker (Stage 3.12): the detailed string and
+    # circuit rows are those of INV1; the shared breaker and C-INVT take every inverter.
+    string_invs = spec.string_inverters()
+    multi = len(string_invs) > 1
+    iac_sum = sum(i.iac_max_a * i.qty for i in string_invs)
+    models = list(dict.fromkeys(f"{i.manufacturer} {i.model}" for i in string_invs))
+    fleet = (
+        f"{len(string_invs)} × {i_name}"
+        if multi and len(models) == 1
+        else " + ".join(models)
+        if multi
+        else i_name
+    )
+    shared_run = next((c for c in spec.circuits if c.id == "C-INVT"), None)
+    same_strings = len({s.n_series for s in spec.strings}) == 1
 
     mem = Memoria(
         title=TITLE,
         subtitle=(
             f"Sistema fotovoltaico interconectado de {kwp:.2f} kWp — "
-            f"{sum(s.n_series for s in spec.strings)} módulos {m_name} + {i_name}"
+            f"{sum(s.n_series for s in spec.strings)} módulos {m_name} + {fleet}"
         ),
         general=general_rows(spec),
         equipment=[
@@ -216,6 +334,21 @@ def build_memoria(
                     ("I máx. / Isc máx.", f"{_g(mppt.imax_a)} A / {_g(mppt.isc_max_a)} A por MPPT"),
                     ("Iac máx.", f"{_g(inv.iac_max_a)} A"),
                 ],
+            ),
+            *(
+                (
+                    f"Inversor — {other.manufacturer} {other.model}",
+                    [
+                        ("Pac", f"{_g(other.pac_w)} W, {_g(other.vac_v)} V"),
+                        ("Vcd máx.", f"{_g(other.vdc_max_v)} V"),
+                        ("Iac máx.", f"{_g(other.iac_max_a)} A"),
+                    ],
+                )
+                for other in {
+                    f"{i.manufacturer} {i.model}": i
+                    for i in string_invs[1:]
+                    if i.model != inv.model
+                }.values()
             ),
         ],
         bom=bill_of_materials(spec, derived),
@@ -244,7 +377,14 @@ def build_memoria(
     put("beta", "Módulo FV", "Coef. temperatura Voc (β)", module.beta_voc_pct_c, "%/°C", mfr)
     put("gamma", "Módulo FV", "Coef. temperatura Pmax (γ)", module.gamma_pmax_pct_c, "%/°C", mfr)
     put("fusemax", "Módulo FV", "Fusible máximo en serie", module.max_series_fuse_a, "A", mfr)
-    put("pac", "Inversor", "Potencia nominal CA", inv.pac_w * inv.qty, "W", ifr)
+    put(
+        "pac",
+        "Inversor",
+        "Potencia nominal CA" + (f" ({len(string_invs)} inversores)" if multi else ""),
+        sum(i.pac_w * i.qty for i in string_invs) if multi else inv.pac_w * inv.qty,
+        "W",
+        ifr,
+    )
     put("vdcmax", "Inversor", "Tensión máxima CD", inv.vdc_max_v, "V", ifr)
     put("mpptmin", "Inversor", "MPPT mínima", mppt.vmin_v, "V", ifr)
     put("mpptmax", "Inversor", "MPPT máxima", mppt.vmax_v, "V", ifr)
@@ -332,8 +472,22 @@ def build_memoria(
         "NOM 310-15(b)(3)(a)",
     )
     put(
-        "lenAC", "Circuito CA", "Longitud inversor → ITM-1", ac_c.length_m, "m", "Dato del proyecto"
+        "lenAC",
+        "Circuito CA",
+        f"Longitud inversor → {'caja de unión' if shared_run else ac_c.to}",
+        ac_c.length_m,
+        "m",
+        "Dato del proyecto",
     )
+    if not same_strings:
+        put(
+            "pdcarr",
+            "Arreglo",
+            "Potencia del arreglo (suma de las cadenas)",
+            sum(s.p_stc_w for s in derived.strings),
+            "W",
+            "Diseño",
+        )
     put(
         "rAC",
         "Circuito CA",
@@ -386,15 +540,26 @@ def build_memoria(
         "",
     )
     del s8
-    calc(
-        "pstc",
-        s1,
-        "Potencia del arreglo (STC)",
-        "{nstr}*{ns}*{pmax}",
-        n_strings * ns * module.pmax_w,
-        "W",
-        shown=f"{n_strings} × {ns} × {_g(module.pmax_w)} W",
-    )
+    if same_strings:
+        calc(
+            "pstc",
+            s1,
+            "Potencia del arreglo (STC)",
+            "{nstr}*{ns}*{pmax}",
+            n_strings * ns * module.pmax_w,
+            "W",
+            shown=f"{n_strings} × {ns} × {_g(module.pmax_w)} W",
+        )
+    else:
+        calc(
+            "pstc",
+            s1,
+            "Potencia del arreglo (STC)",
+            "{pdcarr}",
+            v["pdcarr"],
+            "W",
+            shown="Suma de las cadenas de los inversores",
+        )
     calc(
         "dcac",
         s1,
@@ -628,7 +793,9 @@ def build_memoria(
     )
 
     ac = spec.ac_bos
-    itm = next((o for o in ac.ocpds if o.role == "I1"), None)
+    itm: Any = next((o for o in ac.ocpds if o.role == "I1"), None) or next(
+        (m for m in ac.main_breakers if m.plant_disconnect and m.kaic_ka is not None), None
+    )
     main = ac.main_breakers[0] if ac.main_breakers else None
     panel = ac.panels[0] if ac.panels else None
     size_ac = ac_c.conductors.size
@@ -659,18 +826,40 @@ def build_memoria(
             "kA",
             "Dato del servicio",
         )
-        calc(
-            "iac125",
-            s6,
-            "Protección mínima de salida",
-            "1.25*{iac}",
-            1.25 * inv.iac_max_a,
-            "A",
-            shown=f"1.25 × {_g(inv.iac_max_a)} A",
-            limit=f"≤ {_g(itm.rating_a)} A ({itm.id})",
-            check=("<=", "itm1"),
-            cite="NOM 690-8(b)(1), 240-6",
-        )
+        if multi:
+            put(
+                "iacsum",
+                "Inversor",
+                "Suma de las corrientes máximas CA (ITM compartido)",
+                iac_sum,
+                "A",
+                ifr,
+            )
+            calc(
+                "iac125",
+                s6,
+                "Protección mínima del ITM compartido",
+                "1.25*{iacsum}",
+                1.25 * iac_sum,
+                "A",
+                shown=f"1.25 × {_g(iac_sum)} A ({len(string_invs)} inversores)",
+                limit=f"≤ {_g(itm.rating_a)} A ({itm.id})",
+                check=("<=", "itm1"),
+                cite="NOM 690-8(b)(1), 240-6",
+            )
+        else:
+            calc(
+                "iac125",
+                s6,
+                "Protección mínima de salida",
+                "1.25*{iac}",
+                1.25 * inv.iac_max_a,
+                "A",
+                shown=f"1.25 × {_g(inv.iac_max_a)} A",
+                limit=f"≤ {_g(itm.rating_a)} A ({itm.id})",
+                check=("<=", "itm1"),
+                cite="NOM 690-8(b)(1), 240-6",
+            )
     calc(
         "req75ac",
         s6,
@@ -709,6 +898,8 @@ def build_memoria(
         check=("<=", spec.standards.vd_limits_pct.ac),
         cite="VD-002",
     )
+    if multi and shared_run is not None and itm is not None:
+        _shared_run_rows(spec, derived, shared_run, put, calc, v, s6, factor, itm.id, tables)
     if itm is not None:
         calc(
             "kaicchk",

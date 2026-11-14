@@ -8,7 +8,9 @@ device the catalogue chose carries its reference (``model``); otherwise its rati
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
+from typing import Any
 
 from pvsld.core.calc import Derived
 from pvsld.core.model import Circuit, PvSystemSpec
@@ -98,14 +100,17 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
     breakers = [d for d in dc.disconnects if d.id.startswith(STRING_BREAKER)]
     switches = [d for d in dc.disconnects if d.id.startswith(BOX_SWITCH)]
     box = "Caja de protecciones CD"
-    if fuses:
-        f = fuses[0]
+    fuse_kinds: dict[tuple[Any, ...], list[Any]] = {}
+    for fuse in fuses:  # several inverters: one line per distinct fuse
+        fuse_kinds.setdefault((fuse.model, fuse.ie_a, fuse.ue_v, fuse.poles), []).append(fuse)
+    for same in fuse_kinds.values():
+        f = same[0]
         add(
             BomLine(
                 box,
                 "Fusible gPV 10×38 mm",
                 f"{device_name(f.model) or 'gPV'} {_g(f.ie_a)} A, {_g(f.ue_v)} V cd",
-                f.poles * len(fuses),
+                f.poles * len(same),
                 "pza",
             )
         )
@@ -114,7 +119,7 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
                 box,
                 "Portafusible-seccionador",
                 f"{f.poles} polos, 10×38 mm, {_g(f.ue_v)} V cd",
-                len(fuses),
+                len(same),
                 "pza",
             )
         )
@@ -155,8 +160,9 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
         )
     if fuses or breakers:
         n = len(spec.strings)
+        boxes = len({s.inverter for s in spec.strings})  # one box per inverter
         add(BomLine(box, "Conector tipo MC4", "Par macho/hembra", n, "par"))
-        add(BomLine(box, "Gabinete", "Caja de protecciones CD con terminales", 1, "pza"))
+        add(BomLine(box, "Gabinete", "Caja de protecciones CD con terminales", boxes, "pza"))
 
     for circuit in spec.circuits:
         wires = circuit.conductors
@@ -188,6 +194,16 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
             )
         )
 
+    for junction in spec.ac_bos.junction_boxes:
+        add(
+            BomLine(
+                "Lado CA",
+                "Caja de unión de CA",
+                f"{junction.id}: une las salidas de los inversores antes del ITM compartido",
+                1,
+                "pza",
+            )
+        )
     ac = spec.ac_bos
     for o in ac.ocpds:
         add(
@@ -254,7 +270,7 @@ def bill_of_materials(spec: PvSystemSpec, derived: Derived) -> list[BomLine]:
                 "pza",
             )
         )
-    return lines
+    return _merged(lines) if len(spec.string_inverters()) > 1 else lines
 
 
 def _micro_lines(spec: PvSystemSpec) -> list[BomLine]:
@@ -296,6 +312,24 @@ def _micro_lines(spec: PvSystemSpec) -> list[BomLine]:
             )
         )
     return lines
+
+
+def _merged(lines: list[BomLine]) -> list[BomLine]:
+    """Identical inverters, box switches and SPDs of several inverters on one line each."""
+    merged: list[BomLine] = []
+    index: dict[tuple[str, str, str, str], int] = {}
+    for line in lines:
+        key = (line.group, line.item, line.description, line.unit)
+        if line.item in _MERGED_ITEMS and key in index:
+            first = merged[index[key]]
+            merged[index[key]] = dataclasses.replace(first, quantity=first.quantity + line.quantity)
+            continue
+        index.setdefault(key, len(merged))
+        merged.append(line)
+    return merged
+
+
+_MERGED_ITEMS = frozenset({"Inversor", "Seccionador FV", "DPS de CD"})
 
 
 def bom_text(spec: PvSystemSpec, derived: Derived, lines: list[BomLine] | None = None) -> str:

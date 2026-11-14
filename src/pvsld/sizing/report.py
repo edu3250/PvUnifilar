@@ -11,13 +11,19 @@ from collections import defaultdict
 from pvsld.core.severity import Severity
 from pvsld.sizing.micro_sizing import MicroCandidate
 from pvsld.sizing.models import Candidate, Rejection, SizingResult
+from pvsld.sizing.multi_sizing import MultiCandidate
 
 
 def _kwp(watts: float) -> str:
     return f"{watts / 1000:.2f} kWp"
 
 
-def _describe(candidate: Candidate | MicroCandidate) -> str:
+def _describe(candidate: Candidate | MicroCandidate | MultiCandidate) -> str:
+    if isinstance(candidate, MultiCandidate):
+        return (
+            f"{candidate.label} ({candidate.modules} modules, {_kwp(candidate.p_dc_w)}, DC/AC "
+            f"{candidate.p_dc_w / candidate.p_ac_w:.2f}, shared breaker {candidate.breaker_a:g} A)"
+        )
     if isinstance(candidate, MicroCandidate):
         return (
             f"{candidate.micro_id} {candidate.label} ({candidate.modules} modules, "
@@ -58,9 +64,16 @@ def _findings_lines(candidate: Candidate | MicroCandidate) -> list[str]:
     return lines
 
 
-def _selected_section(candidate: Candidate | MicroCandidate) -> list[str]:
+def _selected_section(candidate: Candidate | MicroCandidate | MultiCandidate) -> list[str]:
     if isinstance(candidate, MicroCandidate):
         return _micro_section(candidate)
+    if isinstance(candidate, MultiCandidate):
+        lines = [f"SELECTED: {_describe(candidate)}", f"  why: {candidate.explanation_es}"]
+        lines += [
+            f"  INV{n}: {u.inverter_id} {u.label} ({u.modules} modules, {_kwp(u.p_dc_w)})"
+            for n, u in enumerate(candidate.units, start=1)
+        ]
+        return lines + _findings_lines(candidate)
     m, bos = candidate.metrics, candidate.bos
     lines = [
         f"SELECTED: {_describe(candidate)}",
@@ -139,6 +152,6 @@ def format_report(result: SizingResult) -> str:
         lines += _rejection_section(result.rejected)
     lines.append("ASSUMPTIONS AND TODO:")
     lines += [f"  - {text}" for text in result.assumptions]
-    if result.selected is not None and not isinstance(result.selected, MicroCandidate):
+    if isinstance(result.selected, Candidate):
         lines += [f"  - TODO 3.4b: {text}" for text in result.selected.bos.todo]
     return "\n".join(lines)
