@@ -91,6 +91,18 @@ class SizingRequest(BaseModel):
     module_count_min: int | None = Field(default=None, gt=0, description="Total modules, lower")
     module_count_max: int | None = Field(default=None, gt=0, description="Total modules, upper")
     optimizers_on_all_modules: bool = False
+    inverter_count: int | None = Field(
+        default=None,
+        ge=1,
+        description="Fix the number of string inverters, each the same model with the same strings "
+        "(owner 2026-11-13: one shared breaker); None: the fewest that reach the request",
+    )
+    inverter_set: list[str] | None = Field(
+        default=None,
+        min_length=2,
+        description="Mixed models: exactly these string inverters, one catalogue id per unit "
+        "(repeats allowed); the modules are shared in proportion to their AC power",
+    )
     microinverters: list[str] | Literal["auto"] | None = Field(
         default=None,
         description="Design with microinverters: catalogue ids to evaluate or 'auto' for all; "

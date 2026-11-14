@@ -1037,7 +1037,18 @@ runs, 60 A breaker).
 **Status**: In Progress
 
 ##### Stage 3.12.2: sizing, memoria, BOM, project sheet
-**Status**: Not Started
+**Goal**: `pvsld.sizing.multi_sizing` (`MultiCandidate`, `InverterUnit`, `build_multi_spec`):
+with a target, the fewest inverters (up to 6) whose best design comes within one module of the
+best reachable one, every inverter the same model and strings; `inverter_count` fixes the count,
+`inverter_set` the units (mixed models, modules shared by AC power); the design is built through
+`graph_to_spec` (junction box `CJ-CA1`, shared breaker, `C-INV<n>`/`C-INVT`) plus one DC box per
+inverter, and must pass the rule pack (else the automatic search keeps one inverter); fixed
+protections or cables keep the automatic search single (with `inverter_count`/`inverter_set` a
+warning says they are not applied yet). Memoria: INV1's rows, the total power, the shared breaker
+(1.25 × ΣIac) and C-INVT; the BOM groups equal inverters, switches and SPDs, one cabinet per
+inverter and the junction box; text report and MCP texts list each inverter.
+**Tests**: tests/test_multi_inverter_sizing.py (every memoria formula re-evaluated).
+**Status**: In Progress
 
 ##### Stage 3.12.3: A3 sheet, up to 3 inverters x 2 strings
 **Status**: Not Started

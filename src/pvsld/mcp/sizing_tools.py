@@ -20,6 +20,8 @@ from pvsld.catalogue.registry import Component, ComponentRegistry
 from pvsld.resources import data_path
 from pvsld.sizing import SizingResult
 from pvsld.sizing.micro_sizing import MicroCandidate
+from pvsld.sizing.models import Candidate
+from pvsld.sizing.multi_sizing import MultiCandidate
 
 __all__ = [
     "CATALOGUE_DIR_ENV",
@@ -184,6 +186,16 @@ def _grouped_rejections(result: SizingResult) -> list[dict[str, Any]]:
 
 
 def _alternative(candidate: Any) -> dict[str, Any]:
+    if isinstance(candidate, MultiCandidate):
+        return {
+            "rank": candidate.rank,
+            "inverter": "+".join(candidate.inverter_ids),
+            "config": candidate.label,
+            "modules": candidate.modules,
+            "kwp": round(candidate.p_dc_w / 1000, 3),
+            "dc_ac": round(candidate.p_dc_w / candidate.p_ac_w, 2),
+            "warnings": [issue.rule_id for issue in candidate.warnings],
+        }
     if isinstance(candidate, MicroCandidate):
         return {
             "rank": candidate.rank,
@@ -209,7 +221,7 @@ def _alternative(candidate: Any) -> dict[str, Any]:
 def sizing_output(result: SizingResult) -> SizingOutput:
     selected = result.selected
     assumptions = list(result.assumptions)
-    if selected is not None and not isinstance(selected, MicroCandidate):
+    if isinstance(selected, Candidate):
         assumptions += [f"TODO 3.4b: {text}" for text in selected.bos.todo]
     if selected is None:
         return SizingOutput(
@@ -228,7 +240,12 @@ def sizing_output(result: SizingResult) -> SizingOutput:
         )
     brief = selected.to_dict()
     brief.pop("rule_pack", None)
-    if isinstance(selected, MicroCandidate):
+    if isinstance(selected, MultiCandidate):
+        headline = (
+            f"SELECTED: {selected.label} ({selected.modules} modules, "
+            f"{selected.p_dc_w / 1000:.2f} kWp, shared breaker {selected.breaker_a:g} A)"
+        )
+    elif isinstance(selected, MicroCandidate):
         headline = (
             f"SELECTED: {selected.micro_id} {selected.label} ({selected.modules} modules, "
             f"{selected.p_dc_w / 1000:.2f} kWp)"
