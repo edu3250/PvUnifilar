@@ -1,0 +1,43 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per power level.
+component_type: pv_module
+family_id: LONGI-LR7-72HVH
+manufacturer: LONGi
+model_family: Hi-MO X10 Scientist LR7-72HVH 655~670M
+cell_type: BC-CELL
+cells: 144
+bifacial: false
+dimensions_mm: [2382, 1134, 30]
+weight_kg: 28.5
+frame: Anodized aluminum alloy frame
+front_cover: Single glass, 3.2 mm coated tempered glass
+junction_box: IP68, three diodes
+max_system_voltage_v: 1500
+max_series_fuse_a: 25
+operating_temp_c: [-40, 85]
+noct_c: 45
+power_tolerance_pct: [0, 3]
+temp_coef_pmax_pct_per_c: -0.260
+temp_coef_voc_pct_per_c: -0.200
+temp_coef_isc_pct_per_c: 0.050
+cable_mm2: 4.0
+certifications: [IEC 61215, IEC 61730, UL 61730, ISO9001:2015, ISO14001:2015, ISO45001:2018, IEC62941]
+variants:
+  - {component_id: LONGI-LR7-72HVH-655M, pmax_w: 655, vmp_v: 44.66, imp_a: 14.67, voc_v: 54.00, isc_a: 15.37, efficiency_pct: 24.2, noct: {pmax_w: 499, vmp_v: 42.44, imp_a: 11.76, voc_v: 51.32, isc_a: 12.34}}
+  - {component_id: LONGI-LR7-72HVH-660M, pmax_w: 660, vmp_v: 44.76, imp_a: 14.75, voc_v: 54.10, isc_a: 15.45, efficiency_pct: 24.4, noct: {pmax_w: 502, vmp_v: 42.54, imp_a: 11.82, voc_v: 51.42, isc_a: 12.41}}
+  - {component_id: LONGI-LR7-72HVH-665M, pmax_w: 665, vmp_v: 44.86, imp_a: 14.83, voc_v: 54.20, isc_a: 15.52, efficiency_pct: 24.6, noct: {pmax_w: 506, vmp_v: 42.63, imp_a: 11.88, voc_v: 51.51, isc_a: 12.47}}
+  - {component_id: LONGI-LR7-72HVH-670M, pmax_w: 670, vmp_v: 44.96, imp_a: 14.91, voc_v: 54.30, isc_a: 15.60, efficiency_pct: 24.8, noct: {pmax_w: 510, vmp_v: 42.73, imp_a: 11.94, voc_v: 51.61, isc_a: 12.53}}
+source:
+  filename: Longi Solar PV Module 670W Hi-MO X10 Explorer.pdf
+  sha256: b10f40aff3d96facf23769bbb357e143cfc07badbd1795eef0af241e734197c2
+  title: LR7-72HVH 655~670M (20241118 BGV02 Draft), © LONGi
+  pages: [1, 2]
+  extraction_method: pdf_text_layer
+  extraction_date: 2026-11-14
+  reviewed_by: claude
+  review_date: 2026-11-14
+  notes: >-
+    Datasheet supplied by the owner. The issue and the file name call the series Explorer; the
+    datasheet itself prints "Hi-MO X10 Scientist". Cell type is printed as BC-CELL (TaiRay wafer
+    and BC technology). NOCT is printed 45±2 °C; the record keeps 45. Maximum system voltage is
+    printed DC1500V (IEC). Values were read from the text layer and confirmed on the rendered page
+    images (pages 1-2).
