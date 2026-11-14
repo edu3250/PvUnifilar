@@ -3,7 +3,7 @@ component_type: pv_module
 family_id: LONGI-LR5-72HTH
 manufacturer: LONGi
 model_family: Hi-MO X6 Explorer LR5-72HTH 565~585M (V2)
-cell_type: HPBC back-contact mono-crystalline
+cell_type: mono-crystalline (cell technology not printed on the datasheet)
 cells: 144
 bifacial: false
 dimensions_mm: [2278, 1134, 30]
@@ -35,8 +35,8 @@ source:
   pages: [1, 2]
   extraction_method: pdf_text_layer
   extraction_date: 2026-11-14
-  reviewed_by: null
-  review_date: null
+  reviewed_by: claude
+  review_date: 2026-11-14
   notes: >-
     The printed footer dates this Explorer V19 sheet 2023-09-26, later than the printed date of the
     official Scientist LR5-72HTH 590~600M sheet (20230811V19), so this is the most recent official
@@ -45,6 +45,6 @@ source:
     LONGi renamed the family and the module codes are unchanged. The sheet covers the Explorer bins
     565~585M; the Scientist bins (590~600M) have a separate datasheet and are not printed in this
     table, so this record holds only the five Explorer power levels. The datasheet does not print a
-    cell technology on its two pages; the modules use LONGi's HPBC back-contact mono-crystalline
-    cells per the manufacturer's Hi-MO X6 product page. The sheet prints "DC1500V (IEC/UL)"; the
+    cell technology on its two pages; cell_type keeps what the datasheet prints (the M suffix means mono-crystalline;
+    reviewer correction: a product page is not a source for the record). The sheet prints "DC1500V (IEC/UL)"; the
     record keeps the IEC 1500 V. The NOCT row (45±2°C) is printed as NOCT.
