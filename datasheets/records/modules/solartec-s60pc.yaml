@@ -1,0 +1,50 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per power level.
+component_type: pv_module
+family_id: SOLARTEC-S60PC
+manufacturer: Solartec
+model_family: S60PC 240-260 W polycrystalline
+cell_type: Polycrystalline
+cells: 60
+bifacial: false
+dimensions_mm: [1640, 992, 40]
+weight_kg: 18.5
+frame: Aluminium (40 mm) or without frame
+front_cover: Tempered front glass
+junction_box: IP65 Type IV junction box with 6 bypass diodes
+max_system_voltage_v: 600
+max_series_fuse_a: 15
+operating_temp_c: [-40, 90]
+noct_c: 45
+power_tolerance_pct: [0, 3]
+temp_coef_pmax_pct_per_c: -0.45
+temp_coef_voc_pct_per_c: -0.330
+temp_coef_isc_pct_per_c: 0.062
+connector: MC4 type plug, TÜV certified
+cable_mm2: 4.0
+certifications: [IEC 61215, IEC 61730, NMX-J 618]
+variants:
+  - {component_id: SOLARTEC-S60PC-240, pmax_w: 240, vmp_v: 30.00, imp_a: 8.00, voc_v: 35.70, isc_a: 8.57, efficiency_pct: 14.75}
+  - {component_id: SOLARTEC-S60PC-245, pmax_w: 245, vmp_v: 30.40, imp_a: 8.05, voc_v: 36.10, isc_a: 8.63, efficiency_pct: 15.05}
+  - {component_id: SOLARTEC-S60PC-250, pmax_w: 250, vmp_v: 30.60, imp_a: 8.17, voc_v: 36.30, isc_a: 8.71, efficiency_pct: 15.36}
+  - {component_id: SOLARTEC-S60PC-255, pmax_w: 255, vmp_v: 30.70, imp_a: 8.30, voc_v: 36.40, isc_a: 8.80, efficiency_pct: 15.67}
+  - {component_id: SOLARTEC-S60PC-260, pmax_w: 260, vmp_v: 30.90, imp_a: 8.42, voc_v: 36.70, isc_a: 8.89, efficiency_pct: 15.98}
+source:
+  filename: Solartec PV module 260W S60PC.pdf
+  sha256: 1245ff15417b88e316fad4d9d1c335ad7448a5d764657974b40ad393eb8010f0
+  title: S60PC 240-260 W Solar Panel, 012015 (bilingual English/Spanish), Solartec
+  pages: [1, 2]
+  extraction_method: pdf_text_layer
+  extraction_date: 2026-11-14
+  reviewed_by: claude
+  review_date: 2026-11-14
+  notes: >-
+    Datasheet supplied by the owner. Bilingual English/Spanish datasheet; the values come from the
+    English column. The NOCT column is exactly 0.8 x the STC row for every model (for example
+    S60PC-240: Voc 28.54 V = 0.8 x 35.70 V, Vmp 24.00 V = 0.8 x 30.00 V, Imp 6.40 A = 0.8 x 8.00 A,
+    Pmax 192 W = 0.8 x 240 W), so Vmp x Imp = 153.6 W does not match the printed Pmax 192 W. The
+    NOCT electrical values are not physically consistent and are left out of the variants; noct_c
+    keeps the printed 45±2 °C. Module thickness is not printed as such; dimensions_mm keeps the
+    40 mm aluminium frame height as the third value. Power tolerance is printed as "Warranted
+    Tolerance +3%" and recorded as 0 to +3 %. The datasheet's STC note reads 20 °C and AM 1.6,
+    apparently a typo for 25 °C and AM 1.5; the STC values are recorded as printed. Values were
+    read from the text layer and confirmed on the rendered page images (pages 1-2).

@@ -1,0 +1,50 @@
+# Facts from the manufacturer datasheet (the PDF is not redistributed). Family + one variant per power level.
+component_type: pv_module
+family_id: LONGI-LR5-72HTH
+manufacturer: LONGi
+model_family: Hi-MO X6 Explorer LR5-72HTH 565~585M (V2)
+cell_type: mono-crystalline (cell technology not printed on the datasheet)
+cells: 144
+bifacial: false
+dimensions_mm: [2278, 1134, 30]
+weight_kg: 27.2
+frame: anodized aluminum alloy frame
+front_cover: single glass, 3.2mm coated tempered glass
+junction_box: IP68
+cable_mm2: 4
+max_system_voltage_v: 1500
+max_series_fuse_a: 25
+operating_temp_c: [-40, 85]
+noct_c: 45
+power_tolerance_pct: [0, 3]
+temp_coef_pmax_pct_per_c: -0.290
+temp_coef_voc_pct_per_c: -0.230
+temp_coef_isc_pct_per_c: 0.050
+certifications: [IEC 61215, IEC 61730, UL 61730]
+variants:
+  - {component_id: LONGI-LR5-72HTH-565M, pmax_w: 565, vmp_v: 43.61, imp_a: 12.96, voc_v: 51.76, isc_a: 14.01, efficiency_pct: 21.9, noct: {pmax_w: 422, vmp_v: 39.79, imp_a: 10.61, voc_v: 48.60, isc_a: 11.31}}
+  - {component_id: LONGI-LR5-72HTH-570M, pmax_w: 570, vmp_v: 43.76, imp_a: 13.03, voc_v: 51.91, isc_a: 14.07, efficiency_pct: 22.1, noct: {pmax_w: 426, vmp_v: 39.93, imp_a: 10.68, voc_v: 48.74, isc_a: 11.36}}
+  - {component_id: LONGI-LR5-72HTH-575M, pmax_w: 575, vmp_v: 43.91, imp_a: 13.10, voc_v: 52.06, isc_a: 14.14, efficiency_pct: 22.3, noct: {pmax_w: 430, vmp_v: 40.07, imp_a: 10.73, voc_v: 48.88, isc_a: 11.42}}
+  - {component_id: LONGI-LR5-72HTH-580M, pmax_w: 580, vmp_v: 44.06, imp_a: 13.17, voc_v: 52.21, isc_a: 14.20, efficiency_pct: 22.5, noct: {pmax_w: 433, vmp_v: 40.20, imp_a: 10.78, voc_v: 49.02, isc_a: 11.47}}
+  - {component_id: LONGI-LR5-72HTH-585M, pmax_w: 585, vmp_v: 44.21, imp_a: 13.24, voc_v: 52.36, isc_a: 14.27, efficiency_pct: 22.6, noct: {pmax_w: 437, vmp_v: 40.34, imp_a: 10.84, voc_v: 49.16, isc_a: 11.52}}
+source:
+  filename: L_Gi_LE_PM_T_PMD_059_F138_LR_5_72_HTH_565_585_M_V2_30_30_and_15_Frame_Explorer_V19_fb7474efd7.pdf
+  url: https://static.longi.com/L_Gi_LE_PM_T_PMD_059_F138_LR_5_72_HTH_565_585_M_V2_30_30_and_15_Frame_Explorer_V19_fb7474efd7.pdf
+  sha256: a2931312053cfe53f3b06653e64b3f1e61a2d4e691856762a1872ba807f92569
+  title: Hi-MO X6 Explorer LR5-72HTH 565~585M (V2), (20230926V19) DG
+  pages: [1, 2]
+  extraction_method: pdf_text_layer
+  extraction_date: 2026-11-14
+  reviewed_by: claude
+  review_date: 2026-11-14
+  notes: >-
+    The printed footer dates this Explorer V19 sheet 2023-09-26, later than the printed date of the
+    official Scientist LR5-72HTH 590~600M sheet (20230811V19), so this is the most recent official
+    LR5-72HTH datasheet on LONGi's own domain and it holds the IEC monofacial version the issue
+    asks for. The sheet is branded "Hi-MO X6" although the queue issue calls the series "Hi-MO 6":
+    LONGi renamed the family and the module codes are unchanged. The sheet covers the Explorer bins
+    565~585M; the Scientist bins (590~600M) have a separate datasheet and are not printed in this
+    table, so this record holds only the five Explorer power levels. The datasheet does not print a
+    cell technology on its two pages; cell_type keeps what the datasheet prints (the M suffix means mono-crystalline;
+    reviewer correction: a product page is not a source for the record). The sheet prints "DC1500V (IEC/UL)"; the
+    record keeps the IEC 1500 V. The NOCT row (45±2°C) is printed as NOCT.
