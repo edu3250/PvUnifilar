@@ -5,7 +5,7 @@ Usage::
     pvsld catalogue validate [PATH] [--require-reviewed]
     pvsld catalogue list [--records DIR] [--type TYPE] [--manufacturer NAME] [--include-unreviewed]
     pvsld catalogue show ID [--records DIR] [--include-unreviewed]
-    pvsld catalogue verify RECORD --pdf PDF [--records DIR] [--markdown FILE]
+    pvsld catalogue verify RECORD --pdf PDF [--records DIR] [--markdown FILE] [--owner-supplied]
     pvsld catalogue render PDF --pages N [N ...] --out DIR
 
 ``verify`` and ``render`` serve catalogue pull requests (docs/catalogue/contributing-records.md):
@@ -190,7 +190,9 @@ def _show(args: argparse.Namespace) -> int:
 
 def _verify(args: argparse.Namespace) -> int:
     try:
-        report = verify_record(args.record, args.pdf, args.records)
+        report = verify_record(
+            args.record, args.pdf, args.records, owner_supplied=args.owner_supplied
+        )
     except PdfReaderMissingError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
@@ -292,6 +294,11 @@ def register(subcommands: Any) -> None:
     )
     verify.add_argument(
         "--markdown", type=Path, default=None, metavar="FILE", help="also write the report here"
+    )
+    verify.add_argument(
+        "--owner-supplied",
+        action="store_true",
+        help="the owner supplied the PDF (queue issue with a local path): source.url is optional",
     )
     verify.set_defaults(run=_verify)
 

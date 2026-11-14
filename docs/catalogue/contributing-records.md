@@ -32,7 +32,8 @@ Only take issues of an **open** type.
 
 ## 1. Pick a family from the queue
 
-Every family to add has an issue labelled `catalogue-queue`. Work only on those issues.
+Every family to add has an issue labelled `catalogue-queue`. Work only on those issues. Issues
+labelled `catalogue-backlog` are for types that are not open yet: never take them.
 
 ```bash
 gh issue list --repo edu3250/PvUnifilar --label catalogue-queue --search "-label:claimed" --limit 20
@@ -70,6 +71,21 @@ pvsld() { PYTHONPATH=src "$MAIN/.venv/Scripts/python.exe" -c "import sys; from p
 Define the `pvsld` function again in every new shell. Never run `pip install` in the main `.venv`.
 
 ## 3. Get the official datasheet
+
+**Datasheet supplied by the owner.** When the issue says "Datasheet supplied by the owner" and
+gives a local path (under `$MAIN/datasheets/inbox/owner-…/`), use that exact file: do not
+download another one and do not move or rename it. Then:
+
+- `source.filename` is that file name and `source.sha256` its `sha256sum`;
+- `source.url` only if you find **the same document** on the manufacturer's own website (same
+  title and revision); otherwise leave `url` out and write "Datasheet supplied by the owner."
+  as the first sentence of `source.notes`;
+- run the verifier with `--owner-supplied` (step 6) and render the pages into
+  `$MAIN/datasheets/cache/review/<fam>` as usual.
+
+Skip the rest of this step and continue with step 4.
+
+**Datasheet you download.** Otherwise:
 
 1. Find the datasheet on the **manufacturer's own website** (for example `jinkosolar.com`,
    `longi.com`, `trinasolar.com`). If the issue gives a URL, use it.
@@ -209,6 +225,8 @@ pvsld catalogue verify datasheets/records/modules/<fam>.yaml \
   --markdown "$MAIN/datasheets/cache/review/<fam>/verify.md"
 ```
 
+Add `--owner-supplied` when the issue gave you the datasheet.
+
 - **FAIL**: fix every problem and run it again. Do not open a pull request with a FAIL.
 - **Warnings**: fix them or explain them in the pull request.
 - **Values not found in the text layer**: normal for scanned or outlined datasheets. Look at each one
@@ -275,7 +293,8 @@ merge catalogue pull requests without the owner's per-PR approval).
 2. **Verifier.** Run `pvsld catalogue verify` on the PR branch with the PDF in
    `datasheets/inbox/catalogue/<fam>/`. Compare with the report in the pull request.
 3. **Source.** The URL is on the manufacturer's own domain and downloads the same file (same
-   SHA-256). Download only from manufacturer domains.
+   SHA-256). Download only from manufacturer domains. For a datasheet supplied by the owner the
+   PDF is the one the issue names (same SHA-256) and the URL is optional.
 4. **Values.** Open the rendered pages (`datasheets/cache/review/<fam>/page-*.png`; render them if
    missing) and check every value the verifier did not find, plus a spot check of the found ones
    (small integers can match by chance). Check the variant list against the table: none missing,
