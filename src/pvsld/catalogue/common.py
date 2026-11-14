@@ -40,6 +40,11 @@ class Provenance(Strict):
     """
 
     filename: str = Field(min_length=1)
+    url: str | None = Field(
+        default=None,
+        pattern=r"^https://\S+$",
+        description="Official download address of the datasheet (required in catalogue PRs)",
+    )
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$", description="SHA-256 of the owner's PDF")
     title: str = Field(min_length=1, description="Title, revision and date as printed")
     pages: list[PositiveInt] = Field(min_length=1)
