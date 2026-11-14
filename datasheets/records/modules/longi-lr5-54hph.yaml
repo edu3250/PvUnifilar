@@ -3,7 +3,7 @@ component_type: pv_module
 family_id: LONGI-LR5-54HPH
 manufacturer: LONGi
 model_family: Hi-MO 5m LR5-54HPH 405~425M
-cell_type: PERC mono-crystalline
+cell_type: mono-crystalline, M10 gallium-doped wafer, 9-busbar half-cut cell
 cells: 108
 bifacial: false
 dimensions_mm: [1722, 1134, 30]
@@ -35,14 +35,14 @@ source:
   pages: [1, 2]
   extraction_method: rendered_page
   extraction_date: 2026-11-14
-  reviewed_by: null
-  review_date: null
+  reviewed_by: claude
+  review_date: 2026-11-14
   notes: >-
     The PDF has no text layer (image-only), so every value was read from the rendered page images
     (pages 1 and 2). The printed footer is (20220410V15). The sheet is the monofacial single-glass
     version the issue asks for (glass row: "Single glass, 3.2mm coated tempered glass"). The two
     pages do not print a cell technology; they name "M10 Gallium-doped Wafer", "Integrated
-    Segmented Ribbons" and "9-busbar Half-cut Cell"; the modules use LONGi's PERC
-    mono-crystalline cells per the manufacturer's Hi-MO 5m product page. The sheet prints
+    Segmented Ribbons" and "9-busbar Half-cut Cell"; cell_type keeps what the datasheet prints (the M suffix means mono-crystalline;
+    reviewer correction: a product page is not a source for the record). The sheet prints
     "DC1500V (IEC/UL)"; the record keeps the IEC 1500 V. The NOCT row (45±2°C) is printed as NOCT.
     In addition to the 0~3% power tolerance the sheet prints a ±3% Voc and Isc tolerance.
