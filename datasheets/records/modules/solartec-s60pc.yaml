@@ -35,8 +35,8 @@ source:
   pages: [1, 2]
   extraction_method: pdf_text_layer
   extraction_date: 2026-11-14
-  reviewed_by: null
-  review_date: null
+  reviewed_by: claude
+  review_date: 2026-11-14
   notes: >-
     Datasheet supplied by the owner. Bilingual English/Spanish datasheet; the values come from the
     English column. The NOCT column is exactly 0.8 x the STC row for every model (for example
