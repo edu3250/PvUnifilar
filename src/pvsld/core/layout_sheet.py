@@ -95,6 +95,8 @@ TABLE_TEXT = (1.4, 3.4, "OpenSans", "OpenSansCondensed-Bold")
 """Text height, row height, cell style and title style of the schedule (the template's boxes)."""
 TABLE_TITLE_HEIGHT = 2.2
 """Height of the box titles of the template."""
+SCHEDULE_CLEARANCE_MM = 3.0
+"""Earth runs pass this far above the protection schedule."""
 GROUND_LABEL_DROP_MM = 18.5
 """From the electrode's port down to the end of its label (tag and two lines), plus a 2 mm gap: the
 earthing bus is lifted until the label clears a tall protection schedule."""
@@ -272,9 +274,15 @@ def _memory(spec: PvSystemSpec, derived: Derived, i1: Ocpd) -> list[str]:
     values = {c.circuit_id: c for c in derived.circuits}
     if out is not None and out.id in values:
         v = values[out.id]
-        i_out = inverter.iac_max_a
+        fleet = spec.string_inverters()
+        i_out = sum(i.iac_max_a for i in fleet)
+        source = (
+            f"{_g(i_out)} A"
+            if len(fleet) == 1
+            else f"{' + '.join(_g(i.iac_max_a) for i in fleet)} = {_g(i_out)} A"
+        )
         lines.append(
-            f"CA:  Isal máx {_g(i_out)} A x 1.25 = {_n(1.25 * i_out, 2)} A "
+            f"CA:  Isal máx {source} x 1.25 = {_n(1.25 * i_out, 2)} A "
             f"-> ITM {i1.poles}P x {_g(i1.rating_a)} A (690-8) ; conductor {out.conductors.size} "
             f"{_n(v.ampacity_corrected_a or v.ampacity_75_a)} A  OK"
         )
@@ -352,6 +360,9 @@ def _circuit_dc(spec: PvSystemSpec, derived: Derived) -> tuple[str, str, list[st
 
 
 def _circuit_ac(spec: PvSystemSpec, derived: Derived, i1: Ocpd) -> tuple[str, str, list[str]]:
+    fleet = spec.string_inverters()
+    if len(fleet) > 1:
+        return _circuit_ac_multi(spec, derived, i1)
     inverter = spec.inverters[0]
     circuit = next((c for c in spec.circuits if c.kind == "inverter_output"), None)
     title = "INVERSOR -> ITM FV, CENTRO DE CARGA (CA)"
@@ -372,6 +383,43 @@ def _circuit_ac(spec: PvSystemSpec, derived: Derived, i1: Ocpd) -> tuple[str, st
                 + (
                     f"   ΔV = {_n(values.vd_pct, 2)} % (<= {_g(spec.standards.vd_limits_pct.ac)} %)"
                     if values.vd_pct is not None
+                    else ""
+                )
+            )
+    return title, subtitle, lines
+
+
+def _circuit_ac_multi(spec: PvSystemSpec, derived: Derived, i1: Ocpd) -> tuple[str, str, list[str]]:
+    """Several inverters: their runs to the junction box and the shared run to the breaker."""
+    fleet = spec.string_inverters()
+    first = fleet[0]
+    title = "INVERSORES -> CAJA DE UNIÓN -> ITM FV, CENTRO DE CARGA (CA)"
+    subtitle = f"{_g(first.vac_v)} Vca, {PHASES[first.phases]} + tierra, 60 Hz"
+    subtitle += _devices([f"{s.id} {s.spd_type} en {s.at}" for s in spec.ac_bos.spds])
+    values = {c.circuit_id: c for c in derived.circuits}
+    runs = [c for c in spec.circuits if c.kind == "inverter_output" and c.id != "C-INVT"]
+    shared = next((c for c in spec.circuits if c.id == "C-INVT"), None)
+    lines: list[str] = []
+    kinds = {(c.conductors.size, c.length_m) for c in runs}
+    if runs:
+        run = runs[0]
+        label = f"{len(runs)} x C-INV" if len(kinds) == 1 else f"{runs[0].id}..{runs[-1].id}"
+        lines.append(f"{label}: {_conductor_text(run)}   L = {_g(run.length_m)} m")
+    if shared is not None:
+        lines.append(f"C-INVT: {_conductor_text(shared)}   L = {_g(shared.length_m)} m")
+        v = values.get(shared.id)
+        total = sum(i.iac_max_a for i in fleet)
+        if v is not None:
+            lines.append(
+                f"Imáx = {_g(total)} A ({len(fleet)} inversores) -> ITM compartido "
+                f"{i1.poles}x{_g(i1.rating_a)} A"
+            )
+            lines.append(
+                f"Amp {shared.conductors.size} = {_n(v.ampacity_corrected_a or 0)} A >= "
+                f"{_g(i1.rating_a)} A"
+                + (
+                    f"   ΔV = {_n(v.vd_pct, 2)} % (<= {_g(spec.standards.vd_limits_pct.ac)} %)"
+                    if v.vd_pct is not None
                     else ""
                 )
             )
@@ -414,9 +462,18 @@ def _inverter_lines(spec: PvSystemSpec) -> list[str]:
     if inverter.dc_spd_integrated:
         protections.append("SPD CD")
     kind = INVERTER_TYPES[inverter.type]
+    fleet = spec.string_inverters()
+    models = list(dict.fromkeys(i.model for i in fleet))
+    model = inverter.model
+    if len(fleet) > 1:
+        model = (
+            f"{inverter.model} (x {len(fleet)})"
+            if len(models) == 1
+            else " + ".join(f"{m} (x {sum(1 for i in fleet if i.model == m)})" for m in models)
+        )
     return [
         inverter.manufacturer.upper(),
-        inverter.model,
+        model,
         f"{kind}, {PHASES[inverter.phases]}",
         f"{_thousands(inverter.pac_w)} W",
         f"{_g(inverter.vac_v)} Vca 60 Hz  Imáx: {_g(inverter.iac_max_a)} A",
@@ -702,6 +759,15 @@ def build_sheet_diagram(
 
         ground_y = max(PLACEMENT.ground[1], schedule.y_top + GROUND_LABEL_DROP_MM)
         schematic = build_micro_schematic(spec, derived, PLACEMENT, ground_y=ground_y)
+    elif len(spec.string_inverters()) > 1:
+        from pvsld.core.layout_multi import PANEL_EARTH_Y, build_multi_schematic
+
+        schematic = build_multi_schematic(
+            spec,
+            derived,
+            PLACEMENT,
+            panel_earth_y=max(PANEL_EARTH_Y, schedule.y_top + SCHEDULE_CLEARANCE_MM),
+        )
     else:
         schematic = build_schematic(spec, derived, _clear_of_schedule(PLACEMENT, schedule))
     i1 = schematic.i1
@@ -763,7 +829,7 @@ def build_sheet_diagram(
     fields.fit("owner.rpu", utility.rpu, BLANK)
     fields.set("owner.service", _service(spec))
     fields.set("capacity.pdc", f"{_thousands(derived.kwp_total * 1000)} Wp")
-    fields.set("capacity.pac", f"{_thousands(inverter.pac_w * inverter.qty)} W")
+    fields.set("capacity.pac", f"{_thousands(derived.kwac_total * 1000)} W")
     fields.set("capacity.ratio", _n(derived.dc_ac_ratio, 2))
     fields.set("capacity.energy", "______ kWh/año")
 
@@ -790,6 +856,11 @@ def build_sheet_diagram(
         f"PROYECTO: SFVI DE {_kwp(derived.kwp_total)} kWp  -  {n_modules} x "
         f"{module.manufacturer.split()[0].upper()} {_g(module.pmax_w)} Wp + "
         + (f"{inverter.qty} x " if micro else "")
+        + (
+            f"{len(spec.string_inverters())} x "
+            if not micro and len(spec.string_inverters()) > 1
+            else ""
+        )
         + f"{inverter.manufacturer.upper()} {inverter.model}",
     )
     contact = " / ".join(part for part in (client.phone, client.email) if part)

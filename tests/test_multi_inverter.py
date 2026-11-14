@@ -16,7 +16,6 @@ from pvsld.capabilities import capabilities
 from pvsld.catalogue import ComponentRegistry
 from pvsld.core.calc import derive
 from pvsld.core.draft import evaluate_draft
-from pvsld.core.layout import LayoutError
 from pvsld.core.model import parse_spec
 from pvsld.core.validation import validate_pv_design
 from pvsld.graph import graph_to_spec
@@ -263,5 +262,6 @@ def test_capabilities_and_the_sheet(template, registry) -> None:
     spec = parse_spec(
         graph_to_spec(_graph([GROWATT_5K, GROWATT_5K]), template, registry=registry).spec
     )
-    with pytest.raises(LayoutError, match="un solo inversor"):
-        layout_diagram(spec, derive(spec))
+    # the A3 sheet draws them since Stage 3.12.3 (tests/test_multi_inverter_sheet.py)
+    ids = {i.comp_id for i in layout_diagram(spec, derive(spec)).instances}
+    assert {"INV1", "INV2", "J1"} <= ids
