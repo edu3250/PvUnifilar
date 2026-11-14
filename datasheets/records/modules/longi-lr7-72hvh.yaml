@@ -33,8 +33,8 @@ source:
   pages: [1, 2]
   extraction_method: pdf_text_layer
   extraction_date: 2026-11-14
-  reviewed_by: null
-  review_date: null
+  reviewed_by: claude
+  review_date: 2026-11-14
   notes: >-
     Datasheet supplied by the owner. The issue and the file name call the series Explorer; the
     datasheet itself prints "Hi-MO X10 Scientist". Cell type is printed as BC-CELL (TaiRay wafer
