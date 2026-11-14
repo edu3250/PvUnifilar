@@ -5,6 +5,12 @@ Usage::
     pvsld catalogue validate [PATH] [--require-reviewed]
     pvsld catalogue list [--records DIR] [--type TYPE] [--manufacturer NAME] [--include-unreviewed]
     pvsld catalogue show ID [--records DIR] [--include-unreviewed]
+    pvsld catalogue verify RECORD --pdf PDF [--records DIR] [--markdown FILE]
+    pvsld catalogue render PDF --pages N [N ...] --out DIR
+
+``verify`` and ``render`` serve catalogue pull requests (docs/catalogue/contributing-records.md):
+``verify`` checks a draft record against its datasheet and prints the report for the pull request;
+``render`` writes the cited pages as PNG files for the reviewer. Both need ``pvsld[catalogue]``.
 
 ``PATH`` is a records folder (default ``datasheets/records``) or one record file, for example a
 draft that has not been moved into the catalogue yet. ``validate`` exits with 1 when any record is
@@ -38,6 +44,7 @@ from pvsld.catalogue.microinverters import Microinverter
 from pvsld.catalogue.modules import PVModule
 from pvsld.catalogue.protection import AcBreaker, DcBreaker, DcFuse, DcSpd, DcSwitch
 from pvsld.catalogue.registry import RECORD_FOLDERS, Component, ComponentRegistry, load_records
+from pvsld.catalogue.verify import PdfReaderMissingError, render_pages, verify_record
 from pvsld.resources import data_path
 
 DEFAULT_RECORDS = data_path("datasheets/records")
@@ -181,6 +188,31 @@ def _show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _verify(args: argparse.Namespace) -> int:
+    try:
+        report = verify_record(args.record, args.pdf, args.records)
+    except PdfReaderMissingError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    text = report.to_markdown()
+    print(text, end="")
+    if args.markdown is not None:
+        args.markdown.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown.write_text(text, encoding="utf-8")
+    return 0 if report.ok else 1
+
+
+def _render(args: argparse.Namespace) -> int:
+    try:
+        written = render_pages(args.pdf, args.pages, args.out, scale=args.scale)
+    except (PdfReaderMissingError, ValueError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    for path in written:
+        print(path)
+    return 0
+
+
 def register(subcommands: Any) -> None:
     """Add the ``catalogue`` command group to the ``pvsld`` parser."""
     catalogue = subcommands.add_parser(
@@ -238,6 +270,43 @@ def register(subcommands: Any) -> None:
         help=f"bundled records folder (default {DEFAULT_RECORDS})",
     )
     add.set_defaults(run=_add, include_unreviewed=False)
+
+    verify = actions.add_parser(
+        "verify",
+        help="check a draft record against its datasheet (catalogue pull requests)",
+        description="Validate RECORD, check its place in the catalogue, the datasheet SHA-256 and "
+        "pages, and look for every value of the record in the text layer of the cited pages. "
+        "Prints a Markdown report for the pull request; the exit code is 1 when the record "
+        "cannot be merged.",
+    )
+    verify.add_argument("record", type=Path, metavar="RECORD", help="record YAML file")
+    verify.add_argument(
+        "--pdf", type=Path, required=True, metavar="PDF", help="the datasheet it comes from"
+    )
+    verify.add_argument(
+        "--records",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="records folder to check against (default: two levels above RECORD)",
+    )
+    verify.add_argument(
+        "--markdown", type=Path, default=None, metavar="FILE", help="also write the report here"
+    )
+    verify.set_defaults(run=_verify)
+
+    render = actions.add_parser(
+        "render",
+        help="render datasheet pages to PNG for the reviewer",
+        description="Write the given pages of PDF as OUT/page-<n>.png.",
+    )
+    render.add_argument("pdf", type=Path, metavar="PDF", help="the datasheet")
+    render.add_argument(
+        "--pages", type=int, nargs="+", required=True, metavar="N", help="1-based page numbers"
+    )
+    render.add_argument("--out", type=Path, required=True, metavar="DIR", help="output folder")
+    render.add_argument("--scale", type=float, default=2.0, help="render scale (default 2)")
+    render.set_defaults(run=_render)
 
     for name, help_text in (("list", "list the components"), ("show", "print one component")):
         action = actions.add_parser(name, help=help_text, description=help_text.capitalize() + ".")
