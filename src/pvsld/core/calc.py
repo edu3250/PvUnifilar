@@ -398,33 +398,43 @@ def _base_id(endpoint: str) -> str:
 
 
 def protecting_ocpd(spec: PvSystemSpec, circuit: Circuit) -> Ocpd | MainBreaker | None:
-    """The OCPD a circuit is wired to (either endpoint), if any; a service breaker counts when it
-    is also the plant disconnect I1 (schema 0.3.0)."""
-    by_id: dict[str, Ocpd | MainBreaker] = {o.id: o for o in spec.ac_bos.ocpds}
-    by_id.update({b.id: b for b in spec.ac_bos.main_breakers if b.plant_disconnect})
-    for endpoint in (circuit.to, circuit.from_):
-        found = by_id.get(_base_id(endpoint))
-        if found is not None:
-            return found
-    # An inverter's run to an AC junction box is protected by the shared breaker downstream.
+    """The OCPD that protects a circuit: a run to an AC junction box takes the protection of the
+    run that leaves it (the shared or the service breaker: a fault on it is fed from there, even
+    from an inverter breaker's output side); else the OCPD at either endpoint, a service breaker
+    included (schema 0.3.0)."""
     junctions = {j.id for j in spec.ac_bos.junction_boxes}
     if _base_id(circuit.to) in junctions:
         onward = next((c for c in spec.circuits if _base_id(c.from_) == _base_id(circuit.to)), None)
         if onward is not None and onward is not circuit:
             return protecting_ocpd(spec, onward)
+    by_id: dict[str, Ocpd | MainBreaker] = {o.id: o for o in spec.ac_bos.ocpds}
+    by_id.update({b.id: b for b in spec.ac_bos.main_breakers})
+    for endpoint in (circuit.to, circuit.from_):
+        found = by_id.get(_base_id(endpoint))
+        if found is not None:
+            return found
     return None
 
 
+def breaker_inverters(spec: PvSystemSpec, breaker_id: str) -> list[Inverter]:
+    """The string inverters a breaker protects (their output circuits reach it first)."""
+    return spec.inverter_breakers().get(breaker_id, [])
+
+
 def junction_inverters(spec: PvSystemSpec, junction_id: str) -> list[Inverter]:
-    """The string inverters whose output circuits end at the AC junction box ``junction_id``."""
+    """The string inverters whose outputs reach the AC junction box ``junction_id``, directly or
+    through their own breakers."""
     inverters = {i.id: i for i in spec.inverters}
-    return [
-        inverters[_base_id(c.from_)]
-        for c in spec.circuits
-        if c.kind == "inverter_output"
-        and _base_id(c.to) == junction_id
-        and _base_id(c.from_) in inverters
-    ]
+    found: list[Inverter] = []
+    for c in spec.circuits:
+        if c.kind != "inverter_output" or _base_id(c.to) != junction_id:
+            continue
+        source = _base_id(c.from_)
+        if source in inverters:
+            found.append(inverters[source])
+        else:
+            found += breaker_inverters(spec, source)
+    return found
 
 
 def _string_values(spec: PvSystemSpec) -> tuple[StringValues, ...]:
@@ -481,6 +491,8 @@ def _circuit_values(
         joined = (
             junction_inverters(spec, _base_id(circuit.from_))
             if _base_id(circuit.from_) in junctions
+            else breaker_inverters(spec, _base_id(circuit.from_))
+            if circuit.kind == "inverter_output" and inverter is None and branch is None
             else []
         )
 

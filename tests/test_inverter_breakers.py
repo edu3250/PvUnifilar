@@ -276,3 +276,83 @@ def test_capabilities() -> None:
     statuses = {c["id"]: c["status"] for c in capabilities()["capabilities"]}
     assert statuses["inverters.breakers"] == "supported"
     assert statuses["drawing.inverter_breakers"] == "pending"
+
+
+# --- A breaker per inverter without a load centre (owner 2026-11-14) -------------------------
+
+
+def _per_inverter_to_service(*, service: bool = True) -> dict[str, Any]:
+    """Three inverters, each with its breaker; the runs join and reach the service breaker I2
+    (the owner's 3-inverter drawing with a breaker per inverter)."""
+    nodes, cables = _base(3, "GROWATT-MIN-6000TL-X2", 6, ("A", "B"))
+    nodes = [n for n in nodes if n["id"] not in ("CC-1", "ITM-P")]
+    cables = [c for c in cables if "CC-1" not in c["from"] and "ITM-P" not in c["from"]]
+    for k, port in zip((1, 2, 3), ("W", "N", "S"), strict=True):
+        nodes.append({"id": f"ITM-{k}", "type": "ac_breaker"})
+        cables += [
+            {"from": f"INV{k}.AC", "to": f"ITM-{k}.IN", "length_m": 2},
+            {"from": f"ITM-{k}.OUT", "to": f"J1.{port}" if service else "M-1.IN", "length_m": 5},
+        ]
+        if service:
+            cables[-1]["size"] = "2/0 AWG"
+    if service:
+        nodes += [
+            {"id": "J1", "type": "junction"},
+            {"id": "JDL", "type": "ac_breaker", "values": {"rating_a": 175, "kaic_ka": 10}},
+        ]
+        cables += [
+            {"from": "J1.E", "to": "JDL.IN", "length_m": 10, "size": "1 AWG"},
+            {"from": "JDL.OUT", "to": "M-1.IN"},
+        ]
+    return {"format": "pvsld.graph/1", "nodes": nodes, "cables": cables}
+
+
+def test_breakers_per_inverter_join_before_the_service_breaker(registry) -> None:
+    result = graph_to_spec(_per_inverter_to_service(), _template(registry), registry=registry)
+    assert result.ok, _codes(result)
+    spec = result.spec
+    ac = spec["ac_bos"]
+    assert [(o["id"], o["role"]) for o in ac["ocpds"]] == [
+        ("ITM-1", "I1"),
+        ("ITM-2", "I1"),
+        ("ITM-3", "I1"),
+    ]
+    assert [(m["id"], m["role"]) for m in ac["main_breakers"]] == [("JDL", "I2")]
+    assert (ac["point_of_connection"]["panel"], ac["point_of_connection"]["breaker"]) == (
+        None,
+        "JDL",
+    )
+    runs = [
+        (c["id"], c["from"], c["to"]) for c in spec["circuits"] if c["kind"] == "inverter_output"
+    ]
+    assert runs[3:] == [
+        ("C-ITM1", "ITM-1", "J1"),
+        ("C-ITM2", "ITM-2", "J1"),
+        ("C-ITM3", "ITM-3", "J1"),
+        ("C-INVT", "J1", "JDL"),
+    ]
+    # the runs after the inverter breakers are protected by the service breaker: 2/0 AWG takes
+    # 175 A, the 1 AWG run to it does not (NOM 240-4), as in the owner's drawing
+    report = validate_pv_design(spec)
+    errors = [(f.rule_id, f.subject) for f in report.findings if f.severity.value == "E"]
+    assert errors == [("CON-003", "C-INVT")]
+    assert not [f for f in report.findings if f.rule_id == "DIS-005"]
+
+
+def test_without_a_service_breaker_the_drawing_is_incomplete(registry) -> None:
+    result = graph_to_spec(
+        _per_inverter_to_service(service=False), _template(registry), registry=registry
+    )
+    assert any(
+        i.code == "topology" and "interruptor principal (I2)" in i.message_es for i in result.issues
+    )
+
+
+def test_the_round_trip_without_a_load_centre(registry) -> None:
+    spec = graph_to_spec(_per_inverter_to_service(), _template(registry), registry=registry).spec
+    boxed = apply_dc_box(spec, dc_box(spec, registry=registry))
+    exported = spec_to_graph(boxed, registry=registry)
+    assert exported.issues == ()
+    again = graph_to_spec(exported.graph, exported.template, registry=registry)
+    assert again.ok, _codes(again)
+    assert again.spec == boxed

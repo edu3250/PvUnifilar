@@ -1092,8 +1092,14 @@ class _Evaluator:
                     calc.voltage_drop_ac_pct(size, m, a, i.vac_v, w, self.tables)
                 )
                 limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
-            elif source in junctions:
-                first = calc.junction_inverters(spec, source)[0]
+            elif source in junctions or (
+                source not in inverters and calc.breaker_inverters(spec, source)
+            ):
+                first = (
+                    calc.junction_inverters(spec, source)
+                    if source in junctions
+                    else calc.breaker_inverters(spec, source)
+                )[0]
                 drop = lambda size, i=first, m=length, a=cv.i_max_a: calc.voltage_drop_ac_pct(  # noqa: E731
                     size, m, a, i.vac_v, i.phases, self.tables
                 )

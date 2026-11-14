@@ -783,12 +783,17 @@ def _ac_side(
         and box_id is None
         and not any(n.type == "load_centre" for n in b.nodes.values())
     ):
-        b.issue(
-            "unsupported",
-            "Los inversores llegan a ITM distintos sin centro de carga; por ahora un ITM por "
-            "inversor va en el centro de carga (o use un ITM compartido o un tablero combinador).",
-            *shared,
-        )
+        # A breaker per inverter without a load centre (owner 2026-11-14): each one is an I1,
+        # the last breaker before the meter is the I2; without that I2 the drawing is incomplete.
+        alone = [i for i in shared if _service_breaker(net, i, breakers) in (None, i)]
+        if alone:
+            b.issue(
+                "topology",
+                "Con un ITM por inversor y sin centro de carga, las salidas deben unirse y pasar "
+                f"por un interruptor principal (I2) antes del medidor; {', '.join(alone)} llega "
+                "al medidor sin él.",
+                *alone,
+            )
     for itm_id, fed in shared.items():
         inverter_breakers.append(itm_id)
         fed_specs = [i for i in spec["inverters"] if i["id"] in fed]
@@ -1336,7 +1341,9 @@ class _Runs:
     """Where the inverters join (a junction or junction box node), when they share cables."""
 
 
-def _inverter_runs(b: _Builder, inverter_ids: list[str], itm_id: str) -> _Runs:
+def _inverter_runs(
+    b: _Builder, inverter_ids: list[str], itm_id: str, start_port: str = "AC"
+) -> _Runs:
     """Split each inverter's path to ``itm_id``: its own cables, and the cables every inverter
     shares from the node where they join (owner 2026-11-13: one shared breaker)."""
     if b.net_cache is None:
@@ -1344,7 +1351,7 @@ def _inverter_runs(b: _Builder, inverter_ids: list[str], itm_id: str) -> _Runs:
     net = b.net_cache
     chains: dict[str, list[tuple[str, GraphCable | None]]] = {}
     for inverter_id in inverter_ids:
-        _order, parent = net.trace(f"{inverter_id}.AC")
+        _order, parent = net.trace(f"{inverter_id}.{start_port}")
         end = next((f"{itm_id}.{p}" for p in ("IN", "OUT") if f"{itm_id}.{p}" in parent), None)
         chain: list[tuple[str, GraphCable | None]] = []
         port = end
@@ -1496,7 +1503,7 @@ def _inverter_circuit(
 def _breaker_circuits(
     b: _Builder,
     circuits: list[dict[str, Any]],
-    ac: Mapping[str, Any],
+    ac: dict[str, Any],
     string_inverters: list[dict[str, Any]],
     inverters: Mapping[str, CatalogueInverter],
     t_amb: float | None,
@@ -1528,6 +1535,10 @@ def _breaker_circuits(
             phases=inverter["phases"],
             tables=tables,
         )
+    poc = ac.get("point_of_connection") or {}
+    if b.inverter_box is None and not poc.get("panel") and poc.get("breaker"):
+        _runs_to_service(b, circuits, ac, string_inverters, inverters, t_amb, standards, tables)
+        return
     if b.inverter_box is None or b.net_cache is None:
         return
     box_id, first, main_id = b.inverter_box
@@ -1554,6 +1565,68 @@ def _breaker_circuits(
         t_amb=t_amb,
         standards=standards,
         phases=max(i["phases"] for i in string_inverters),
+        tables=tables,
+    )
+
+
+def _runs_to_service(
+    b: _Builder,
+    circuits: list[dict[str, Any]],
+    ac: dict[str, Any],
+    string_inverters: list[dict[str, Any]],
+    inverters: Mapping[str, CatalogueInverter],
+    t_amb: float | None,
+    standards: Standards,
+    tables: Any,
+) -> None:
+    """A breaker per inverter without a load centre: each breaker's run ``C-ITM<n>`` to where
+    they join and the run ``C-INVT`` to the service breaker I2, both protected by the I2."""
+    service = ac["point_of_connection"]["breaker"]
+    ratings = {m.get("id"): m.get("rating_a") for m in ac.get("main_breakers") or []}
+    own = {i["id"]: b.breaker_of[i["id"]] for i in string_inverters if i["id"] in b.breaker_of}
+    order = list(dict.fromkeys(own.values()))
+    runs = _inverter_runs(b, order, service, start_port="OUT")
+    fed = {t: [i for i in string_inverters if own.get(i["id"]) == t] for t in order}
+    phases = max(i["phases"] for i in string_inverters)
+    if runs.junction is not None:
+        others = [j for j in ac.get("junction_boxes") or [] if j.get("id") != runs.junction]
+        ac["junction_boxes"] = [{"id": runs.junction}, *others]
+        b.mapped[runs.junction] = "ac_bos.junction_boxes[0]"
+    for number, breaker in enumerate(order, start=1):
+        if runs.junction is None or not runs.own.get(breaker):
+            continue
+        _inverter_circuit(
+            b,
+            circuits,
+            cid=f"C-ITM{number}",
+            source=breaker,
+            to=runs.junction,
+            path=runs.own[breaker],
+            current=sum(inverters[i["id"]].max_ac_output_current_a for i in fed[breaker]),
+            voltage_v=fed[breaker][0]["vac_v"],
+            ocpd_a=ratings.get(service),
+            default_m=DEFAULTS.ac_inverter_to_junction_m,
+            owner=breaker,
+            t_amb=t_amb,
+            standards=standards,
+            phases=max(i["phases"] for i in fed[breaker]),
+            tables=tables,
+        )
+    _inverter_circuit(
+        b,
+        circuits,
+        cid="C-INVT",
+        source=runs.junction or order[0],
+        to=service,
+        path=runs.shared if runs.junction else runs.own.get(order[0], []),
+        current=sum(inverters[i["id"]].max_ac_output_current_a for i in string_inverters),
+        voltage_v=string_inverters[0]["vac_v"],
+        ocpd_a=ratings.get(service),
+        default_m=DEFAULTS.ac_output_length_m,
+        owner=runs.junction or order[0],
+        t_amb=t_amb,
+        standards=standards,
+        phases=phases,
         tables=tables,
     )
 

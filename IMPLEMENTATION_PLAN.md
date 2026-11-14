@@ -1100,7 +1100,9 @@ currents (new rule CMB-001; the combiner's AC SPD optional) and feeds the load c
 C-CCA. `PvSystemSpec.inverter_breakers` / `combiner_current_a`; `evaluate_choices` checks every
 inverter breaker; the micro combiner model is reused; `spec_to_graph` round trip; naming
 `ITM-INV{n}`; capabilities `inverters.breakers` supported, `drawing.inverter_breakers` pending
-(the A3 sheet refuses them).
+(the A3 sheet refuses them). Owner 2026-11-14: without a load centre, each inverter breaker is
+an I1 and the last breaker before the meter the I2; the runs `C-ITM<n>` and `C-INVT` after the
+inverter breakers are protected by the I2 (CON-003).
 **Tests**: tests/test_inverter_breakers.py.
 **Status**: In Progress
 ---

@@ -183,7 +183,16 @@ def spec_to_graph(
     targets = {i["id"]: onward.get(i["id"]) for i in string_inverters}
     string_box = spec.get("ac_combiner") if not spec.get("ac_branches") else None
     if string_inverters and (string_box or len(set(targets.values())) > 1):
-        _inverter_breakers(d, spec, string_inverters, targets, string_box, ocpds, by_from, panel_id)
+        _inverter_breakers(
+            d,
+            spec,
+            string_inverters,
+            targets,
+            string_box,
+            ocpds,
+            by_from,
+            None if no_panel else panel_id,
+        )
     elif string_inverters and itm_id:
         if itm_id in mains:  # one breaker as I1 and I2 (schema 0.3.0)
             d.node(itm_id, "ac_breaker", **_values(mains[itm_id], _MAIN_DERIVED))
@@ -403,9 +412,10 @@ def _inverter_breakers(
     box: Mapping[str, Any] | None,
     ocpds: Mapping[str, Mapping[str, Any]],
     by_from: Mapping[str, Mapping[str, Any]],
-    panel_id: str,
+    panel_id: str | None,
 ) -> None:
-    """A breaker per inverter in the load centre, or the inverter breakers in an AC combiner
+    """A breaker per inverter in the load centre (or, without one, joined before the service
+    breaker I2), or the inverter breakers in an AC combiner
     (bus of junctions, AC SPD, main breaker outside towards the load centre)."""
 
     def values(breaker_id: str) -> dict[str, Any]:
@@ -419,12 +429,22 @@ def _inverter_breakers(
             if target not in d.breakers:
                 d.node(target, "ac_breaker", **values(target))
                 d.breakers.add(target)
-                d.cable(f"{target}.OUT", f"{panel_id}.LEFT")
+                if panel_id is not None:
+                    d.cable(f"{target}.OUT", f"{panel_id}.LEFT")
             d.cable(
                 f"{inverter['id']}.AC",
                 f"{target}.IN",
                 **_circuit_extra(by_from.get(inverter["id"])),
             )
+        if panel_id is None:  # the breakers' runs join before the service breaker I2
+            ac = spec.get("ac_bos") or {}
+            service = (ac.get("point_of_connection") or {}).get("breaker")
+            junction = next((j["id"] for j in ac.get("junction_boxes", [])), None)
+            if junction is not None and service:
+                d.node(junction, "junction")
+                for target in dict.fromkeys(t for t in targets.values() if t is not None):
+                    d.cable(f"{target}.OUT", f"{junction}.W", **_circuit_extra(by_from.get(target)))
+                d.cable(f"{junction}.E", f"{service}.IN", **_circuit_extra(by_from.get(junction)))
         return
     inside = [t for t in dict.fromkeys(targets.values()) if t is not None]
     spds = {s["id"]: s for s in (spec.get("ac_bos") or {}).get("spds", [])}
