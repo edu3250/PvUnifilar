@@ -69,7 +69,6 @@ from pvsld.resources import data_path
 from pvsld.sizing import bos
 from pvsld.sizing.engine import (
     AC_BREAKER_VOLTAGE_V,
-    BOX_SWITCH_ID,
     STRING_BREAKER_PREFIX,
     STRING_FUSE_PREFIX,
 )
@@ -175,6 +174,7 @@ class ChoiceReport:
 
 
 _PER_STRING_PART = re.compile(r"^(DCD|DPS)-(S\d+)$")
+_SHARED_PART = re.compile(r"^(DCD|DPS)-CD(\d+)$")
 """A part of a per-string DC box: DCD-<string> or DPS-<string>."""
 
 Problem = tuple[str, Severity, str]
@@ -435,14 +435,30 @@ class _Evaluator:
 
     # --- box disconnect --------------------------------------------------------------------
 
+    def _box_strings(self, number: int) -> list[Any]:
+        """The strings of box ``number``: those of the n-th string inverter that has strings
+        (DCD-CD1 / DPS-CD1 take every string of the first; one inverter keeps one box)."""
+        order = [
+            i.id
+            for i in self.spec.string_inverters()
+            if any(s.inverter_id == i.id for s in self.derived.strings)
+        ]
+        if not 1 <= number <= len(order):
+            return []
+        return [s for s in self.derived.strings if s.inverter_id == order[number - 1]]
+
     def box_switch(self) -> None:
-        """The box disconnect: DCD-CD1 for every string, or DCD-<string> for its own string."""
+        """The box disconnect: DCD-CD<n> for every string of inverter n, or DCD-<string> for its
+        own string."""
         strings = {s.string_id: s for s in self.derived.strings}
         if not strings:
             return
         for device in self.spec.dc_bos.disconnects:
-            if device.id == BOX_SWITCH_ID:
-                self._switch(device, list(strings.values()), None)
+            shared = _SHARED_PART.match(device.id)
+            if shared and shared.group(1) == "DCD":
+                members = self._box_strings(int(shared.group(2)))
+                if members:
+                    self._switch(device, members, None)
             elif (match := _PER_STRING_PART.match(device.id)) and match.group(1) == "DCD":
                 string = strings.get(match.group(2))
                 if string is not None:
@@ -560,8 +576,8 @@ class _Evaluator:
             match = _PER_STRING_PART.match(spd.id)
             if match and match.group(1) == "DPS":
                 members = [strings[match.group(2)]] if match.group(2) in strings else []
-            elif spd.id.startswith("DPS-CD"):
-                members = list(strings.values())
+            elif (shared := _SHARED_PART.match(spd.id)) and shared.group(1) == "DPS":
+                members = self._box_strings(int(shared.group(2)))
             else:
                 continue
             if members:
@@ -876,11 +892,16 @@ class _Evaluator:
         ocpd = next((o for o in spec.ac_bos.ocpds if o.id == position), None)
         if ocpd is None or not spec.inverters:
             return
-        inverter = spec.inverters[0]
+        inverters = spec.string_inverters()
+        if not inverters:
+            return
+        inverter = inverters[0]
+        # One breaker for every string inverter (owner 2026-11-13): 1.25 x the sum of currents.
+        iac_a = sum(i.iac_max_a for i in inverters)
         fault = spec.utility.available_fault_current_ka
         phases = SUPPORTED_SYSTEMS.get(spec.utility.system, inverter.phases)
-        minimum = calc.ocpd_min_a(inverter.iac_max_a)
-        standard = bos.ac_ocpd_rating_a(inverter.iac_max_a, self.tables)
+        minimum = calc.ocpd_min_a(iac_a)
+        standard = bos.ac_ocpd_rating_a(iac_a, self.tables)
         choice, found = bos.select_ac_breaker(
             position=position,
             rating_a=standard,
@@ -891,9 +912,10 @@ class _Evaluator:
         )
         for issue in found:
             self.note(position, issue)
+        source = "del inversor" if len(inverters) == 1 else f"de los {len(inverters)} inversores"
         why = (
-            f"El interruptor del catálogo para la salida del inversor ({_n(minimum)} A = 1.25 × "
-            f"{_g(inverter.iac_max_a)} A): "
+            f"El interruptor del catálogo para la salida {source} ({_n(minimum)} A = 1.25 × "
+            f"{_g(iac_a)} A): "
             + (
                 f"{choice.device_id}, {_g(choice.rating_a)} A, {_g(choice.interrupting_ka)} kA."
                 if choice
@@ -932,8 +954,8 @@ class _Evaluator:
             else (
                 "OCP-005",
                 Severity.ERROR,
-                f"{position}: {_g(ocpd.rating_a)} A es menor que 1.25 × la corriente máxima del "
-                f"inversor ({_n(minimum)} A, NOM 690-8(b)(1)).",
+                f"{position}: {_g(ocpd.rating_a)} A es menor que 1.25 × la corriente máxima "
+                f"{source} ({_n(minimum)} A, NOM 690-8(b)(1)).",
             ),
             ok_es=f"{position}: {_g(ocpd.rating_a)} A >= {_n(minimum)} A (1.25 × Iac máx).",
             proposed=choice.rating_a if choice else standard,
@@ -1034,6 +1056,7 @@ class _Evaluator:
         values = {v.circuit_id: v for v in self.derived.circuits}
         inverters = {i.id: i for i in spec.inverters}
         branches = {b.id: b for b in spec.ac_branches}
+        junctions = {j.id for j in spec.ac_bos.junction_boxes}
         for circuit in spec.circuits:
             cv = values[circuit.id]
             source = circuit.from_.split(".", maxsplit=1)[0]
@@ -1064,6 +1087,12 @@ class _Evaluator:
                 micro = inverters[spec.ac_branches[0].microinverters[0].inverter]
                 drop = lambda size, i=micro, m=length, a=cv.i_max_a: calc.voltage_drop_ac_pct(  # noqa: E731
                     size, m, a, i.vac_v, 2, self.tables
+                )
+                limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
+            elif source in junctions:
+                first = calc.junction_inverters(spec, source)[0]
+                drop = lambda size, i=first, m=length, a=cv.i_max_a: calc.voltage_drop_ac_pct(  # noqa: E731
+                    size, m, a, i.vac_v, i.phases, self.tables
                 )
                 limit, drop_rule, ocpd_a = limits.ac, "VD-002", cv.ocpd_rating_a
             else:

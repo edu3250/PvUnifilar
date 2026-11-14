@@ -409,7 +409,7 @@ def test_two_inverters_are_rejected() -> None:
     def two(data: dict[str, Any]) -> None:
         data["inverters"].append({**data["inverters"][0], "id": "INV2"})
 
-    with pytest.raises(LayoutError, match="exactly one inverter"):
+    with pytest.raises(LayoutError, match="un solo inversor"):
         build_diagram(parse_spec(mutated(two)))
 
 

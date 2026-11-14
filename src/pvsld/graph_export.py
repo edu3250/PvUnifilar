@@ -174,16 +174,31 @@ def spec_to_graph(
     itm_id = inverter_breaker_id(ac)
     mains = {m["id"]: m for m in ac.get("main_breakers", [])}
     service_main = poc.get("breaker") if no_panel else None
-    for inverter in spec.get("inverters", []):
-        if inverter.get("type") == "micro" or not itm_id:
-            continue
+    string_inverters = [i for i in spec.get("inverters", []) if i.get("type") != "micro"]
+    if string_inverters and itm_id:
         if itm_id in mains:  # one breaker as I1 and I2 (schema 0.3.0)
             d.node(itm_id, "ac_breaker", **_values(mains[itm_id], _MAIN_DERIVED))
         else:
             breaker(itm_id)
-        d.cable(
-            f"{inverter['id']}.AC", f"{itm_id}.IN", **_circuit_extra(by_from.get(inverter["id"]))
+        # Several inverters join at an AC junction box before their shared breaker.
+        junctions = {j["id"] for j in ac.get("junction_boxes", [])}
+        joined = next(
+            (
+                c["to"]
+                for c in spec.get("circuits", [])
+                if c.get("kind") == "inverter_output" and c["to"] in junctions
+            ),
+            None,
         )
+        if joined is not None:
+            d.node(joined, "junction")
+            d.cable(f"{joined}.E", f"{itm_id}.IN", **_circuit_extra(by_from.get(joined)))
+        for inverter in string_inverters:
+            d.cable(
+                f"{inverter['id']}.AC",
+                f"{joined}.W" if joined else f"{itm_id}.IN",
+                **_circuit_extra(by_from.get(inverter["id"])),
+            )
         if not no_panel:
             d.cable(f"{itm_id}.OUT", f"{panel_id}.LEFT")
         elif service_main and service_main != itm_id:
@@ -266,7 +281,7 @@ def _dc_side(
     if box.skipped_es:
         d.issues.append(box.skipped_es)
         return
-    children = []
+    boxes: dict[str, list[dict[str, Any]]] = {}
     for child in box.children:
         entry = disconnects.get(child.id) or spds.get(child.id)
         values = (
@@ -277,8 +292,9 @@ def _dc_side(
         item: dict[str, Any] = {"id": child.id, "type": child.type_id}
         if values:
             item["values"] = values
-        children.append(item)
-    d.nodes.append({"id": "CAJA-CD", "type": "dc_box", "children": children})
+        boxes.setdefault(child.box, []).append(item)
+    for box_id, children in boxes.items():  # one box per inverter
+        d.nodes.append({"id": box_id, "type": "dc_box", "children": children})
     first: dict[str, bool] = {}
     for link in box.links:
         extra = {}

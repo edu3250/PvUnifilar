@@ -269,7 +269,7 @@ def _unsupported(spec: PvSystemSpec) -> Iterator[DraftIssue]:
     """What the schema accepts but the engine does not calculate or draw yet."""
     micros = [i for i in spec.inverters if i.type == "micro"]
     others = [i for i in spec.inverters if i.type != "micro"]
-    if len(others) > MAX_INVERTERS:
+    if MAX_INVERTERS is not None and len(others) > MAX_INVERTERS:
         yield DraftIssue(
             "unsupported",
             "inverters",
@@ -309,13 +309,16 @@ def _unsupported(spec: PvSystemSpec) -> Iterator[DraftIssue]:
                 "dibuja un solo equipo.",
                 (inverter.id,),
             )
-    if len(spec.strings) > MAX_STRINGS:
-        yield DraftIssue(
-            "unsupported",
-            "strings",
-            f"Por ahora el motor dibuja hasta {MAX_STRINGS} cadenas; hay {len(spec.strings)}.",
-            tuple(s.id for s in spec.strings),
-        )
+    for inverter in others:
+        own = [s for s in spec.strings if s.inverter == inverter.id]
+        if len(own) > MAX_STRINGS:
+            yield DraftIssue(
+                "unsupported",
+                "strings",
+                f"Por ahora el motor calcula hasta {MAX_STRINGS} cadenas por inversor; "
+                f"{inverter.id} tiene {len(own)}.",
+                tuple(s.id for s in own),
+            )
     for index, string in enumerate(spec.strings):
         if string.mppt not in INVERTER_DC_PORTS:
             yield DraftIssue(

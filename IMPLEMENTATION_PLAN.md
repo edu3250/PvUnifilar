@@ -1008,13 +1008,41 @@ SPD to it and drops undrawn template panels/mains; `spec_to_graph` round trip; C
 C-INV against a service breaker that is also I1; capability `service.no_load_centre` supported,
 `drawing.no_load_centre` pending (the A3 sheet refuses such designs with a clear message).
 **Tests**: tests/test_no_load_centre.py; every existing design unchanged.
-**Status**: In Progress
+**Status**: Complete (PR #87)
 
 ##### Stage 3.11.2: plugin on par, release 0.10.0
 **Goal**: sizing options "without load centre" and "one breaker as I1 and I2" (only on request),
 a project-sheet row, the A3 sheet drawing inverter -> ITM-1 (I1) -> ITM-P (I2) -> meter -> grid or
 one breaker labelled "I1 / I2", memoria texts, MCP tools and skills, user guide; release 0.10.0
-and notify the editor.
+and notify the editor (after Stage 3.12, owner 2026-11-13).
+**Status**: Not Started
+
+#### Stage 3.12: Any number of string inverters (approved by the owner 2026-11-13)
+Owner 2026-11-13: any number of string inverters, mixed models allowed, all on **one shared
+breaker** checked for 1.25 x the sum of their currents; auto sizing uses the fewest inverters;
+the A3 sheet draws up to 3 inverters x 2 strings; multi-inverter first, then 3.11.2, one release
+0.10.0. Out of scope: inverters with micros, three-phase inverters, a breaker per inverter.
+
+##### Stage 3.12.1: engine and editor
+**Goal**: no inverter limit (strings: 2 per inverter); `ac_bos.junction_boxes` (schema 0.3.0)
+where the outputs join; circuits `C-INV<n>` (inverter to junction or breaker) and `C-INVT`
+(junction to breaker, the sum of currents), `C-INV` kept with one inverter; CON-003 checks each
+run against the shared breaker; `graph_to_spec` groups inverters by breaker (different breakers
+flagged), sizes the shared breaker for the sum, one DC raceway per inverter, `DCD-<n>` integrated
+switches, SPD `at` from its strings; `dc_box` builds one box per inverter (`CAJA-CD<n>`,
+`DPS-CD<n>`, `DCD-CD<n>`; one inverter unchanged); `evaluate_choices` checks the shared breaker
+and each box; `spec_to_graph` round trip; default run inverter to junction 5 m (filled).
+**Tests**: tests/test_multi_inverter.py (the owner's 16-module example: two 5 kW inverters, 6 AWG
+runs, 60 A breaker).
+**Status**: In Progress
+
+##### Stage 3.12.2: sizing, memoria, BOM, project sheet
+**Status**: Not Started
+
+##### Stage 3.12.3: A3 sheet, up to 3 inverters x 2 strings
+**Status**: Not Started
+
+##### Stage 3.12.4: plugin (MCP, skills, pro mode), then 3.11.2 and release 0.10.0
 **Status**: Not Started
 
 ---

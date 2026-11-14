@@ -611,12 +611,24 @@ DERIVED_NAMES: tuple[DerivedName, ...] = (
     DerivedName(
         pattern="C-INV",
         spec_section="circuits[]",
-        description_es="Circuito de la salida del inversor al ITM-1",
+        description_es="Circuito de la salida del inversor al ITM-1 (un solo inversor)",
     ),
     DerivedName(
-        pattern="DCD-1",
+        pattern="C-INV{n}",
+        spec_section="circuits[]",
+        description_es="Con varios inversores: circuito del inversor INV<n> a la caja de unión "
+        "(o al ITM compartido)",
+    ),
+    DerivedName(
+        pattern="C-INVT",
+        spec_section="circuits[]",
+        description_es="Con varios inversores: circuito de la caja de unión al ITM compartido "
+        "(la suma de las corrientes)",
+    ),
+    DerivedName(
+        pattern="DCD-{n}",
         spec_section="dc_bos.disconnects[]",
-        description_es="Desconectador de CD integrado en el inversor",
+        description_es="Desconectador de CD integrado en el inversor INV<n> (DCD-1 con uno solo)",
     ),
     DerivedName(
         pattern="R{n}",
