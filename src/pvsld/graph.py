@@ -631,12 +631,20 @@ def graph_to_spec(
     disconnects: list[dict[str, Any]] = []
     spds: list[dict[str, Any]] = []
     first_inverter = inverters[0]["id"] if inverters else "INV1"
-    for inverter in inverters:
+    inverter_of = {s["id"]: s["inverter"] for s in strings}
+
+    def spd_at(node_id: str) -> str:
+        """The DC side of the inverter whose strings reach the SPD (a derived field)."""
+        owners = sorted(s for s, devices in on_path.items() if node_id in devices)
+        owner = next((inverter_of[s] for s in owners if s in inverter_of), first_inverter)
+        return f"{owner}.dc"
+
+    for number, inverter in enumerate(inverters, start=1):
         if inverter.get("dc_switch_integrated"):
             found = catalogue_inverters[inverter["id"]]
             disconnects.append(
                 {
-                    "id": "DCD-1",
+                    "id": f"DCD-{number}",
                     "integrated_in": inverter["id"],
                     "poles": 2,
                     "ue_v": inverter["vdc_max_v"],
@@ -659,14 +667,14 @@ def graph_to_spec(
                 )
             if node.type == "dc_spd":
                 b.mapped[node_id] = f"dc_bos.spds[{len(spds)}]"
-                spds.append({**node.values, "id": node_id, "at": f"{first_inverter}.dc"})
+                spds.append({**node.values, "id": node_id, "at": spd_at(node_id)})
             else:
                 disconnects.append(_device(node, b, len(disconnects)))
         elif node.type == "dc_switch":
             disconnects.append(_device(node, b, len(disconnects)))
         elif node.type == "dc_spd":
             # "at" comes from the connections (a derived field of the palette, ENG-013).
-            entry = {**node.values, "id": node_id, "at": f"{first_inverter}.dc"}
+            entry = {**node.values, "id": node_id, "at": spd_at(node_id)}
             b.mapped[node_id] = f"dc_bos.spds[{len(spds)}]"
             spds.append(entry)
     spec["dc_bos"] = {"combiners": [], "disconnects": disconnects, "spds": spds}
@@ -736,6 +744,7 @@ def _ac_side(
     breakers = {n.id: n for n in b.nodes.values() if n.type == "ac_breaker"}
     inverter_breakers: list[str] = list(on_micro_side)
     without_panel = False
+    shared: dict[str, list[str]] = {}
     for node in (n for n in b.nodes.values() if n.type == "inverter"):
         order, _parent = net.trace(f"{node.id}.AC")
         hit = [p.split(".", 1)[0] for p in order if p.split(".", 1)[0] in breakers]
@@ -746,9 +755,21 @@ def _ac_side(
                 node.id,
             )
             continue
-        inverter_breakers.append(hit[0])
-        inverter = next((i for i in spec["inverters"] if i["id"] == node.id), None)
-        itm = breakers[hit[0]]
+        shared.setdefault(hit[0], []).append(node.id)
+    if len(shared) > 1:
+        fed_by = "; ".join(f"{itm_id}: {', '.join(ids)}" for itm_id, ids in shared.items())
+        b.issue(
+            "unsupported",
+            f"Los inversores llegan a ITM distintos ({fed_by}); por ahora todos los inversores "
+            "de cadena se unen en un solo ITM compartido.",
+            *(i for ids in shared.values() for i in ids),
+        )
+    for itm_id, fed in shared.items():
+        inverter_breakers.append(itm_id)
+        fed_specs = [i for i in spec["inverters"] if i["id"] in fed]
+        iac_a = sum(i["iac_max_a"] for i in fed_specs)
+        inverter = fed_specs[0] if fed_specs else None
+        itm = breakers[itm_id]
         index = upsert(ocpds, itm)
         entry = ocpds[index]
         # role, backfed and at come from the connections (derived fields, ENG-013).
@@ -757,7 +778,7 @@ def _ac_side(
         entry.setdefault("poles", phases)
         entry.setdefault("voltage_v", AC_BREAKER_VOLTAGE_V)
         if inverter is not None and "rating_a" not in entry:
-            rating = bos.ac_ocpd_rating_a(inverter["iac_max_a"], tables)
+            rating = bos.ac_ocpd_rating_a(iac_a, tables)
             choice, _found = bos.select_ac_breaker(
                 position=itm.id,
                 rating_a=rating,
@@ -769,7 +790,10 @@ def _ac_side(
             entry["rating_a"] = b.fill(
                 f"ac_bos.ocpds[{index}].rating_a",
                 choice.rating_a if choice else rating,
-                "ITM de la salida del inversor: 1.25 × Iac máx, siguiente valor normalizado.",
+                "ITM de la salida del inversor: 1.25 × Iac máx, siguiente valor normalizado."
+                if len(fed_specs) == 1
+                else f"ITM compartido de los {len(fed_specs)} inversores: 1.25 × la suma de sus "
+                "Iac máx, siguiente valor normalizado.",
             )
             if choice is not None and "model" not in entry:
                 entry["model"] = b.fill(
@@ -966,24 +990,28 @@ def _circuits(
     strings = spec["strings"]
     modules = {m["id"]: m for m in spec["modules"]}
     t_amb = site.t_amb_max_c if site else None
-    # The strings share one DC raceway (owned by C-S1): a size drawn on any of their cables.
-    drawn = sorted(
-        {
-            c.raceway_trade_size_mm
-            for string in strings
-            for c in string_paths[string["id"]]
-            if c.raceway_trade_size_mm is not None
-        }
-    )
-    if len(drawn) > 1:
-        b.issue(
-            "conflict",
-            "Las cadenas comparten la tubería de CD, pero sus cables traen tamaños distintos ("
-            + ", ".join(f"{size:g} mm" for size in drawn)
-            + f"); se usa el mayor, {drawn[-1]:g} mm.",
-            *(s["id"] for s in strings),
+    # The strings of each inverter share one DC raceway (owned by its first string's circuit):
+    # a size drawn on any of their cables.
+    dc_trade_sizes: dict[str, float | None] = {}
+    for inverter_id in dict.fromkeys(s["inverter"] for s in strings):
+        group = [s for s in strings if s["inverter"] == inverter_id]
+        drawn = sorted(
+            {
+                c.raceway_trade_size_mm
+                for string in group
+                for c in string_paths[string["id"]]
+                if c.raceway_trade_size_mm is not None
+            }
         )
-    dc_trade_size = drawn[-1] if drawn else None
+        if len(drawn) > 1:
+            b.issue(
+                "conflict",
+                "Las cadenas comparten la tubería de CD, pero sus cables traen tamaños distintos ("
+                + ", ".join(f"{size:g} mm" for size in drawn)
+                + f"); se usa el mayor, {drawn[-1]:g} mm.",
+                *(s["id"] for s in group),
+            )
+        dc_trade_sizes[inverter_id] = drawn[-1] if drawn else None
     for index, string in enumerate(strings):
         path = string_paths[string["id"]]
         cid = f"C-S{index + 1}"
@@ -999,7 +1027,10 @@ def _circuits(
         )
         ambient = max((c.ambient_c for c in path if c.ambient_c is not None), default=None)
         module = modules[string["module"]]
-        n_strings = len(strings)
+        # The strings of one inverter share one DC raceway, owned by the first one's circuit.
+        mates = [k for k, other in enumerate(strings) if other["inverter"] == string["inverter"]]
+        n_strings = len(mates)
+        dc_trade_size = dc_trade_sizes[string["inverter"]]
         size = next((c.size for c in path if c.size), None)
         if size is None and t_amb is not None:
             choice, _issues = bos.size_conductor(
@@ -1045,7 +1076,7 @@ def _circuits(
         }
         if ambient is not None:
             circuit["ambient_c"] = ambient
-        if index == 0:
+        if index == mates[0]:
             circuit["raceway"] = {
                 "type": "EMT",
                 "rooftop_clearance_mm": DEFAULTS.rooftop_clearance_mm,
@@ -1076,7 +1107,7 @@ def _circuits(
                     "EMT más chico que aloja los conductores (Capítulo 10, Tabla 1).",
                 )
         else:
-            circuit["raceway"] = {"ref": "C-S1"}
+            circuit["raceway"] = {"ref": f"C-S{mates[0] + 1}"}
         circuits.append(circuit)
         b.circuit_cables.append(
             CircuitCables(cid, "pv_source", circuit["from"], circuit["to"], b.indices(path))
@@ -1089,103 +1120,224 @@ def _circuits(
         if itm_id
         else {}
     )
-    for inverter in spec["inverters"]:
-        if not itm:
-            break
-        found = inverters[inverter["id"]]
-        path = _inverter_path(b, inverter["id"], itm_id)
-        lengths = [c.length_m for c in path if c.length_m is not None]
-        index = len(circuits)
-        length = (
-            sum(lengths)
-            if lengths
-            else b.fill(
-                f"circuits[{index}].length_m",
-                DEFAULTS.ac_output_length_m,
-                "Longitud por omisión del motor (inversor al ITM).",
-            )
-        )
-        ambient = max((c.ambient_c for c in path if c.ambient_c is not None), default=None)
-        size = next((c.size for c in path if c.size), None)
-        current = found.max_ac_output_current_a
-        if size is None and t_amb is not None:
-            choice, _issues = bos.size_conductor(
-                circuit_id="C-INV",
-                kind="inverter_output",
-                i_max_a=current,
+    string_inverters = [i for i in spec["inverters"] if i["id"] in inverters]
+    if itm and itm_id and string_inverters:
+        runs = _inverter_runs(b, [i["id"] for i in string_inverters], itm_id)
+        if runs.junction is not None:
+            junctions = [j for j in ac.get("junction_boxes") or [] if j.get("id") != runs.junction]
+            ac["junction_boxes"] = [{"id": runs.junction}, *junctions]
+            b.mapped[runs.junction] = "ac_bos.junction_boxes[0]"
+            spec["schema_version"] = max(spec["schema_version"], SERVICE_SCHEMA_VERSION)
+        single = len(string_inverters) == 1
+        for number, inverter in enumerate(string_inverters, start=1):
+            found = inverters[inverter["id"]]
+            _inverter_circuit(
+                b,
+                circuits,
+                cid="C-INV" if single else f"C-INV{number}",
+                source=f"{inverter['id']}.ac",
+                to=runs.junction or itm_id,
+                path=runs.own[inverter["id"]],
+                current=found.max_ac_output_current_a,
+                voltage_v=inverter["vac_v"],
                 ocpd_a=itm.get("rating_a"),
-                current_carrying=phases + (1 if phases == 1 else 0),
-                ambient_c=ambient if ambient is not None else t_amb,
-                clearance_mm=None,
-                length_m=length,
-                drop_pct=lambda s, run=length, i=inverter, amps=current: calc.voltage_drop_ac_pct(
-                    s, run, amps, i["vac_v"], phases, tables
-                ),
-                drop_limit_pct=standards.vd_limits_pct.ac,
-                drop_rule="VD-002",
+                default_m=DEFAULTS.ac_output_length_m
+                if runs.junction is None
+                else DEFAULTS.ac_inverter_to_junction_m,
+                owner=inverter["id"],
+                t_amb=t_amb,
+                standards=standards,
+                phases=phases,
                 tables=tables,
             )
-            if choice is not None:
-                size = b.fill(
-                    f"circuits[{index}].conductors.size",
-                    choice.size,
-                    "Calibre más chico que cumple ampacidad, protección y caída de tensión.",
-                )
-        if size is None:
-            b.issue("missing_value", "C-INV: no se pudo determinar el calibre.", inverter["id"])
-            continue
-        circuit = {
-            "id": "C-INV",
-            "kind": "inverter_output",
-            "from": f"{inverter['id']}.ac",
-            "to": itm_id,
-            "conductors": {
-                "qty": phases,
-                "size": size,
-                "material": "Cu",
-                "insulation": bos.AC_INSULATION,
-            },
-            "neutral": {"size": size},
-            "egc": {"size": size, "type": bos.EGC_TYPE},
-            "raceway": {"type": "EMT", "ccc_count": phases + (1 if phases == 1 else 0)},
-            "length_m": length,
-        }
-        if ambient is not None:
-            circuit["ambient_c"] = ambient
-        thhw = calc.insulated_area_mm2(size, bos.AC_INSULATION, None, tables)
-        ac_drawn = sorted(
-            {c.raceway_trade_size_mm for c in path if c.raceway_trade_size_mm is not None}
-        )
-        if len(ac_drawn) > 1:
-            b.issue(
-                "conflict",
-                "Los cables de C-INV traen tamaños de tubería distintos ("
-                + ", ".join(f"{size:g} mm" for size in ac_drawn)
-                + f"); se usa el mayor, {ac_drawn[-1]:g} mm.",
-                inverter["id"],
+        if runs.junction is not None:
+            _inverter_circuit(
+                b,
+                circuits,
+                cid="C-INVT",
+                source=runs.junction,
+                to=itm_id,
+                path=runs.shared,
+                current=sum(inverters[i["id"]].max_ac_output_current_a for i in string_inverters),
+                voltage_v=string_inverters[0]["vac_v"],
+                ocpd_a=itm.get("rating_a"),
+                default_m=DEFAULTS.ac_output_length_m,
+                owner=runs.junction,
+                t_amb=t_amb,
+                standards=standards,
+                phases=phases,
+                tables=tables,
             )
-        if ac_drawn:
-            circuit["raceway"]["trade_size_mm"] = ac_drawn[-1]
-        raceway, _issues = bos.size_raceway(
-            circuit_id="C-INV",
-            conductors=phases + 1,
-            conductor_area_mm2=thhw,
-            egc_size=size,
-            given_trade_size_mm=None,
-            insulation=bos.AC_INSULATION,
+    spec["circuits"] = circuits
+
+
+@dataclass(frozen=True)
+class _Runs:
+    """The AC runs of the string inverters to their shared breaker."""
+
+    own: dict[str, list[GraphCable]]
+    """Each inverter's cables up to the junction (or the breaker)."""
+    shared: list[GraphCable] = field(default_factory=list)
+    """The cables from the junction to the breaker."""
+    junction: str | None = None
+    """Where the inverters join (a junction or junction box node), when they share cables."""
+
+
+def _inverter_runs(b: _Builder, inverter_ids: list[str], itm_id: str) -> _Runs:
+    """Split each inverter's path to ``itm_id``: its own cables, and the cables every inverter
+    shares from the node where they join (owner 2026-11-13: one shared breaker)."""
+    if b.net_cache is None:
+        return _Runs({i: [] for i in inverter_ids})
+    net = b.net_cache
+    chains: dict[str, list[tuple[str, GraphCable | None]]] = {}
+    for inverter_id in inverter_ids:
+        _order, parent = net.trace(f"{inverter_id}.AC")
+        end = next((f"{itm_id}.{p}" for p in ("IN", "OUT") if f"{itm_id}.{p}" in parent), None)
+        chain: list[tuple[str, GraphCable | None]] = []
+        port = end
+        while port is not None and port in parent:
+            previous, cable = parent[port]
+            chain.append((port, cable))
+            port = previous
+        chains[inverter_id] = list(reversed(chain))  # from the inverter to the breaker
+    if len(inverter_ids) == 1:
+        only = inverter_ids[0]
+        return _Runs({only: [c for _p, c in chains[only] if c is not None]})
+    # The ports every chain reaches, read back from the breaker: the shared tail.
+    tails = [[port for port, _c in reversed(chain)] for chain in chains.values()]
+    shared_ports: list[str] = []
+    for ports in zip(*tails, strict=False):
+        if len(set(ports)) != 1:
+            break
+        shared_ports.append(ports[0])
+    junction = None
+    for port in reversed(shared_ports):  # the farthest shared port from the breaker
+        node = net.node_of(port)
+        if node.type in WIRING_TYPES:
+            junction = node.id
+            break
+    if junction is None:
+        return _Runs({i: [c for _p, c in chain if c is not None] for i, chain in chains.items()})
+    own: dict[str, list[GraphCable]] = {}
+    shared: list[GraphCable] = []
+    for inverter_id, chain in chains.items():
+        cut = next(k for k, (port, _c) in enumerate(chain) if port.split(".", 1)[0] == junction)
+        own[inverter_id] = [c for _p, c in chain[: cut + 1] if c is not None]
+        if not shared:
+            shared = [c for _p, c in chain[cut + 1 :] if c is not None]
+    return _Runs(own, shared, junction)
+
+
+def _inverter_circuit(
+    b: _Builder,
+    circuits: list[dict[str, Any]],
+    *,
+    cid: str,
+    source: str,
+    to: str,
+    path: list[GraphCable],
+    current: float,
+    voltage_v: float,
+    ocpd_a: float | None,
+    default_m: float,
+    owner: str,
+    t_amb: float | None,
+    standards: Standards,
+    phases: int,
+    tables: Any,
+) -> None:
+    """One AC circuit of the string inverters (``C-INV``, ``C-INV<n>`` or ``C-INVT``): its
+    length, size and raceway from the drawn cables, else the engine's values."""
+    lengths = [c.length_m for c in path if c.length_m is not None]
+    index = len(circuits)
+    length = (
+        sum(lengths)
+        if lengths
+        else b.fill(
+            f"circuits[{index}].length_m",
+            default_m,
+            "Longitud por omisión del motor (inversor al ITM)."
+            if default_m == DEFAULTS.ac_output_length_m
+            else "Longitud por omisión del motor (inversor a la caja de unión).",
+        )
+    )
+    ambient = max((c.ambient_c for c in path if c.ambient_c is not None), default=None)
+    size = next((c.size for c in path if c.size), None)
+    if size is None and t_amb is not None:
+        choice, _issues = bos.size_conductor(
+            circuit_id=cid,
+            kind="inverter_output",
+            i_max_a=current,
+            ocpd_a=ocpd_a,
+            current_carrying=phases + (1 if phases == 1 else 0),
+            ambient_c=ambient if ambient is not None else t_amb,
+            clearance_mm=None,
+            length_m=length,
+            drop_pct=lambda s, run=length, amps=current: calc.voltage_drop_ac_pct(
+                s, run, amps, voltage_v, phases, tables
+            ),
+            drop_limit_pct=standards.vd_limits_pct.ac,
+            drop_rule="VD-002",
             tables=tables,
         )
-        if not ac_drawn and raceway.trade_size_mm is not None:
-            circuit["raceway"]["trade_size_mm"] = b.fill(
-                f"circuits[{index}].raceway.trade_size_mm",
-                raceway.trade_size_mm,
-                "EMT más chico que aloja los conductores (Capítulo 10, Tabla 1).",
+        if choice is not None:
+            size = b.fill(
+                f"circuits[{index}].conductors.size",
+                choice.size,
+                "Calibre más chico que cumple ampacidad, protección y caída de tensión.",
             )
-        circuits.append(circuit)
-        b.circuit_cables.append(
-            CircuitCables("C-INV", "inverter_output", circuit["from"], itm_id, b.indices(path))
+    if size is None:
+        b.issue("missing_value", f"{cid}: no se pudo determinar el calibre.", owner)
+        return
+    circuit: dict[str, Any] = {
+        "id": cid,
+        "kind": "inverter_output",
+        "from": source,
+        "to": to,
+        "conductors": {
+            "qty": phases,
+            "size": size,
+            "material": "Cu",
+            "insulation": bos.AC_INSULATION,
+        },
+        "neutral": {"size": size},
+        "egc": {"size": size, "type": bos.EGC_TYPE},
+        "raceway": {"type": "EMT", "ccc_count": phases + (1 if phases == 1 else 0)},
+        "length_m": length,
+    }
+    if ambient is not None:
+        circuit["ambient_c"] = ambient
+    thhw = calc.insulated_area_mm2(size, bos.AC_INSULATION, None, tables)
+    ac_drawn = sorted(
+        {c.raceway_trade_size_mm for c in path if c.raceway_trade_size_mm is not None}
+    )
+    if len(ac_drawn) > 1:
+        b.issue(
+            "conflict",
+            f"Los cables de {cid} traen tamaños de tubería distintos ("
+            + ", ".join(f"{size:g} mm" for size in ac_drawn)
+            + f"); se usa el mayor, {ac_drawn[-1]:g} mm.",
+            owner,
         )
-    spec["circuits"] = circuits
+    if ac_drawn:
+        circuit["raceway"]["trade_size_mm"] = ac_drawn[-1]
+    raceway, _issues = bos.size_raceway(
+        circuit_id=cid,
+        conductors=phases + 1,
+        conductor_area_mm2=thhw,
+        egc_size=size,
+        given_trade_size_mm=None,
+        insulation=bos.AC_INSULATION,
+        tables=tables,
+    )
+    if not ac_drawn and raceway.trade_size_mm is not None:
+        circuit["raceway"]["trade_size_mm"] = b.fill(
+            f"circuits[{index}].raceway.trade_size_mm",
+            raceway.trade_size_mm,
+            "EMT más chico que aloja los conductores (Capítulo 10, Tabla 1).",
+        )
+    circuits.append(circuit)
+    b.circuit_cables.append(CircuitCables(cid, "inverter_output", source, to, b.indices(path)))
 
 
 def inverter_breaker_id(ac: Mapping[str, Any]) -> str | None:

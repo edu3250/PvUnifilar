@@ -243,7 +243,8 @@ def test_result_is_plain_data(graph, template, registry) -> None:
 def test_capabilities_document(capsys) -> None:
     document = capabilities()
     assert document["format"] == "pvsld.capabilities/1"
-    assert document["limits"]["max_strings"] == MAX_STRINGS
+    assert document["limits"]["max_strings_per_inverter"] == MAX_STRINGS
+    assert document["limits"]["max_inverters"] is None
     statuses = {c["id"]: c["status"] for c in document["capabilities"]}
     assert statuses["storage"] == "pending"
     assert statuses["dc_box"] == "supported"

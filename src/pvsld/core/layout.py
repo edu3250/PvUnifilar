@@ -1410,7 +1410,9 @@ def build_schematic(spec: PvSystemSpec, derived: Derived, placement: Placement) 
     """
     if len(spec.inverters) != 1:
         raise LayoutError(
-            f"template {TEMPLATE} draws exactly one inverter, got {len(spec.inverters)}"
+            f"El plano A3 ({TEMPLATE}) todavía dibuja un solo inversor; el diseño tiene "
+            f"{len(spec.inverters)} (llega en la siguiente versión). El diseño sí se valida y se "
+            "calcula."
         )
     inverter = spec.inverters[0]
     if len(spec.strings) > 2:

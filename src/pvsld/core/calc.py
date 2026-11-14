@@ -21,7 +21,15 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-from pvsld.core.model import Circuit, MainBreaker, Module, Ocpd, PvSystemSpec, StringSpec
+from pvsld.core.model import (
+    Circuit,
+    Inverter,
+    MainBreaker,
+    Module,
+    Ocpd,
+    PvSystemSpec,
+    StringSpec,
+)
 from pvsld.core.tables import NomTables, get_tables
 
 VocMethod = Literal["coefficient", "table_690_7", "iec_default_1_2"]
@@ -398,7 +406,25 @@ def protecting_ocpd(spec: PvSystemSpec, circuit: Circuit) -> Ocpd | MainBreaker 
         found = by_id.get(_base_id(endpoint))
         if found is not None:
             return found
+    # An inverter's run to an AC junction box is protected by the shared breaker downstream.
+    junctions = {j.id for j in spec.ac_bos.junction_boxes}
+    if _base_id(circuit.to) in junctions:
+        onward = next((c for c in spec.circuits if _base_id(c.from_) == _base_id(circuit.to)), None)
+        if onward is not None and onward is not circuit:
+            return protecting_ocpd(spec, onward)
     return None
+
+
+def junction_inverters(spec: PvSystemSpec, junction_id: str) -> list[Inverter]:
+    """The string inverters whose output circuits end at the AC junction box ``junction_id``."""
+    inverters = {i.id: i for i in spec.inverters}
+    return [
+        inverters[_base_id(c.from_)]
+        for c in spec.circuits
+        if c.kind == "inverter_output"
+        and _base_id(c.to) == junction_id
+        and _base_id(c.from_) in inverters
+    ]
 
 
 def _string_values(spec: PvSystemSpec) -> tuple[StringValues, ...]:
@@ -444,6 +470,7 @@ def _circuit_values(
     string_values = {s.string_id: s for s in strings}
     inverters = {i.id: i for i in spec.inverters}
     branches = {b.id: b for b in spec.ac_branches}
+    junctions = {j.id for j in spec.ac_bos.junction_boxes}
     site = spec.project.site
     values = []
     for circuit in spec.circuits:
@@ -451,6 +478,11 @@ def _circuit_values(
         source = string_values.get(_base_id(circuit.from_))
         inverter = inverters.get(_base_id(circuit.from_))
         branch = branches.get(_base_id(circuit.from_))
+        joined = (
+            junction_inverters(spec, _base_id(circuit.from_))
+            if _base_id(circuit.from_) in junctions
+            else []
+        )
 
         i_max: float | None = None
         vd_pct: float | None = None
@@ -463,6 +495,12 @@ def _circuit_values(
             i_max = inverter.iac_max_a
             vd_pct = voltage_drop_ac_pct(
                 size, circuit.length_m, i_max, inverter.vac_v, inverter.phases, tables
+            )
+        elif circuit.kind == "inverter_output" and joined:
+            # From the junction box to the shared breaker: every inverter that joins there.
+            i_max = sum(i.iac_max_a for i in joined)
+            vd_pct = voltage_drop_ac_pct(
+                size, circuit.length_m, i_max, joined[0].vac_v, joined[0].phases, tables
             )
         elif (
             circuit.kind == "inverter_output"

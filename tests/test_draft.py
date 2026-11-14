@@ -127,7 +127,8 @@ def test_not_a_mapping_is_invalid_structure() -> None:
 @pytest.mark.parametrize(
     ("change", "path"),
     [
-        (lambda s: s["inverters"].append({**s["inverters"][0], "id": "INV2"}), "inverters"),
+        # a second inverter is supported since Stage 3.12.1; a third string on one is not
+        (lambda s: s["strings"].append({**s["strings"][0], "id": "S3"}), "strings"),
         (lambda s: s["inverters"][0].update(qty=2), "inverters[0].qty"),
         (lambda s: s["storage"].update(coupling="dc"), "storage.coupling"),
     ],

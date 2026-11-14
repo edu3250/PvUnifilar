@@ -50,6 +50,12 @@ class Routing(BaseModel):
 
     dc_string_length_m: float = Field(default=25, gt=0, lt=1000, description="One-way string run")
     ac_output_length_m: float = Field(default=30, gt=0, lt=1000, description="Inverter to ITM run")
+    ac_inverter_to_junction_m: float = Field(
+        default=5,
+        gt=0,
+        lt=1000,
+        description="Each inverter to the AC junction box where several inverters join",
+    )
     dc_ambient_c: float | None = Field(default=None, description="Default: site maximum ambient")
     ac_ambient_c: float | None = Field(default=None, description="Default: site maximum ambient")
     rooftop_clearance_mm: float = Field(

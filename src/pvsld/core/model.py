@@ -37,7 +37,8 @@ MICRO_SCHEMA_VERSION = "0.2.0"
 """First version with microinverters (``ac_branches``); a design that uses them declares it."""
 SERVICE_SCHEMA_VERSION = "0.3.0"
 """First version where the load centre may be left out: the service breaker I2 is the point of
-interconnection, and one breaker may be both I1 and I2 (RES/142/2017 schemes, owner 2026-11-13)."""
+interconnection, and one breaker may be both I1 and I2 (RES/142/2017 schemes, owner 2026-11-13);
+also the AC junction boxes where several string inverters join before their shared breaker."""
 SCHEMA_VERSIONS = (SCHEMA_VERSION, MICRO_SCHEMA_VERSION, SERVICE_SCHEMA_VERSION)
 LATEST_SCHEMA_VERSION = SERVICE_SCHEMA_VERSION
 NO_ARRAY_PROBLEM = "the design needs at least one string or one AC branch"
@@ -416,6 +417,14 @@ class PointOfConnection(_Strict):
     position: Literal["opposite_end", "other"] = "opposite_end"
 
 
+class AcJunctionBox(_Strict):
+    """Schema 0.3.0: where the outputs of several string inverters join before their shared
+    breaker (owner 2026-11-13); circuits end and start at its id."""
+
+    id: str = Field(min_length=1)
+    name: str | None = None
+
+
 class Meter(_Strict):
     id: str = Field(min_length=1)
     role: Literal["MF", "MCE"]
@@ -434,6 +443,9 @@ class AcBos(_Strict):
     main_breakers: list[MainBreaker] = Field(default_factory=list)
     point_of_connection: PointOfConnection
     meters: list[Meter] = Field(default_factory=list)
+    junction_boxes: list[AcJunctionBox] = Field(
+        default_factory=list, description="Schema 0.3.0: AC junction boxes of several inverters"
+    )
 
 
 class Conductors(_Strict):
@@ -577,6 +589,10 @@ class PvSystemSpec(_Strict):
     transformer: dict[str, Any] | None = None
     mt_protection: dict[str, Any] | None = None
 
+    def string_inverters(self) -> list[Inverter]:
+        """The string (and hybrid) inverters, in specification order."""
+        return [i for i in self.inverters if i.type != "micro"]
+
     def inverter_breaker_id(self) -> str:
         """The breaker of the string inverter's output (I1): the backfed I1 breaker, else the
         service breaker that is also I1 (schema 0.3.0), else the point-of-connection breaker."""
@@ -607,6 +623,7 @@ class PvSystemSpec(_Strict):
         ids += [p.id for p in self.ac_bos.panels]
         ids += [b.id for b in self.ac_bos.main_breakers]
         ids += [m.id for m in self.ac_bos.meters]
+        ids += [j.id for j in self.ac_bos.junction_boxes]
         ids.append(self.ac_bos.point_of_connection.id)
         return ids
 
@@ -710,6 +727,10 @@ class PvSystemSpec(_Strict):
                     f"point_of_connection: without a load centre its breaker {poc.breaker!r} "
                     "must be the service breaker I2 in ac_bos.main_breakers"
                 )
+        if ac.junction_boxes and not new:
+            problems.append(
+                f"ac_bos.junction_boxes needs schema_version {SERVICE_SCHEMA_VERSION!r}"
+            )
         for breaker in ac.main_breakers:
             if breaker.plant_disconnect and not new:
                 problems.append(

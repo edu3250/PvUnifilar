@@ -33,6 +33,7 @@ others take the engine's values. :func:`apply_dc_box` writes the box into a spec
 from __future__ import annotations
 
 import copy
+import dataclasses
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -52,6 +53,19 @@ from pvsld.symbols.cfe import get_symbol
 from pvsld.symbols.cfe.definitions import dc_disconnect_name
 
 SPD_ID = "DPS-CD1"
+BOX_ID = "CAJA-CD"
+
+
+def box_part_ids(number: int) -> tuple[str, str]:
+    """The shared switch and SPD of box ``number`` (one box per inverter: DCD-CD1, DPS-CD1)."""
+    return f"DCD-CD{number}", f"DPS-CD{number}"
+
+
+def box_id(number: int, boxes: int) -> str:
+    """The group id of box ``number``: ``CAJA-CD`` with one inverter, else ``CAJA-CD<n>``."""
+    return BOX_ID if boxes == 1 else f"{BOX_ID}{number}"
+
+
 SPD_PREFIX = "DPS-"
 """Per-string SPD: ``DPS-<string>`` (``DPS-S1``)."""
 SWITCH_PREFIX = "DCD-"
@@ -88,6 +102,8 @@ class BoxChild:
     model: str | None = None
     source: Literal["engine", "drawn"] = "engine"
     """``drawn`` when a locked value of the drawing was kept."""
+    box: str = "CAJA-CD"
+    """The box it sits in: ``CAJA-CD``, or ``CAJA-CD<n>`` for inverter n of several."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -102,6 +118,7 @@ class BoxChild:
             "requirements": dict(self.requirements),
             "model": self.model,
             "source": self.source,
+            "box": self.box,
             "reason_es": self.reason_es,
         }
 
@@ -302,276 +319,295 @@ def dc_box(
     if layout == "auto":
         layout = box_layout(data) or "shared"
     inverter = get_symbol("PVSLD_INV")
-    strings = sorted(
+    by_inverter: dict[str, list[Any]] = {}
+    for string in sorted(
         draft.derived.strings, key=lambda s: (-inverter.port(s.mppt_id).y, s.string_id)
-    )
-    n = len(strings)
+    ):
+        by_inverter.setdefault(string.inverter_id, []).append(string)
+    order = [i["id"] for i in data["inverters"] if i.get("id") in by_inverter]
+    groups = [(box_number, by_inverter[inv]) for box_number, inv in enumerate(order, start=1)]
 
     children: list[BoxChild] = []
     links: list[BoxLink] = []
     disconnects: list[dict[str, Any]] = []
     rows: list[tuple[str, ...]] = []
-    protections: list[DcOcpdChoice] = []
     assumptions: list[str] = []
-    switch_block = dc_disconnect_name(n)
-    for index, string in enumerate(strings, start=1):
-        sid = string.string_id
-        module = modules[string.module_id]
-        need = bos.string_need(
-            max_series_fuse_a=module.max_series_fuse_a,
-            isc_a=string.isc_a,
-            strings_per_input=string.n_parallel,
-            voc_cold_string_v=string.voc_max_string_v,
-            poles=ocpd_poles,
-        )
-        required, why = bos.string_ocpd_required(module, string.isc_a, string.n_parallel)
-        reason = why if required else f"{why} {DESIGN_CHOICE_ES}"
-        choice = _protection(need, device, registry, reason)
-        protections.append(choice)
-        is_fuse = choice.device == "fuse"
-        prefix = STRING_FUSE_PREFIX if is_fuse else STRING_BREAKER_PREFIX
-        block = "PVSLD_FUSE_DISC_DC" if is_fuse else "PVSLD_CB_DC"
-        part_id = f"{prefix}{sid}"
-        values: dict[str, Any] = {}
-        if choice.rating_a is not None:
-            values = {"ie_a": choice.rating_a, "ue_v": choice.ue_v, "model": choice.device_id}
-        values, kept = lock.keep(part_id, values)
-        poles = choice.poles or ocpd_poles
-        connector, entry, exit_ = f"CX-{sid}", f"XE-{sid}", f"XS-{sid}"
-        children += [
-            BoxChild(
-                connector,
-                "pv_connector",
-                "PVSLD_PV_CONNECTOR",
-                "connector",
-                _ports("PVSLD_PV_CONNECTOR"),
-                (sid,),
-                f"Conector de campo de la cadena {sid}.",
-            ),
-            BoxChild(
-                entry,
-                "terminal",
-                "PVSLD_TERMINAL",
-                "entry",
-                _ports("PVSLD_TERMINAL"),
-                (sid,),
-                f"Borne de entrada de la cadena {sid} a la caja.",
-            ),
-            BoxChild(
-                part_id,
-                "dc_fuse_holder" if is_fuse else "dc_breaker",
-                block,
-                "protection",
-                _ports(block),
-                (sid,),
-                choice.reason_es,
-                poles=poles,
-                values={k: v for k, v in values.items() if k != "model"},
-                requirements={
-                    "minimum_a": round(need.minimum_a, 2),
-                    "maximum_a": need.maximum_a,
-                    "voc_cold_v": round(need.voc_cold_v, 1),
-                    "fault_a": round(need.fault_a, 2),
-                },
-                model=values.get("model"),
-                source="drawn" if kept else "engine",
-            ),
-            BoxChild(
-                exit_,
-                "terminal",
-                "PVSLD_TERMINAL",
-                "exit",
-                _ports("PVSLD_TERMINAL"),
-                (sid,),
-                f"Borne de salida de la cadena {sid} hacia el inversor.",
-            ),
-        ]
-        if layout == "per_string":
-            switch_id, spd_id = f"{SWITCH_PREFIX}{sid}", f"{SPD_PREFIX}{sid}"
-            switch_in, switch_out, spd_port = f"{switch_id}.IN", f"{switch_id}.OUT", "L"
-        else:
-            switch_id, spd_id = BOX_SWITCH_ID, SPD_ID
-            switch_in, switch_out = f"{switch_id}.IN{index}", f"{switch_id}.OUT{index}"
-            spd_port = f"L{index}"
-        links += [
-            BoxLink(f"{sid}.OUT", f"{connector}.IN", sid),
-            BoxLink(f"{connector}.OUT", f"{entry}.L", sid),
-            BoxLink(f"{entry}.R", f"{part_id}.IN", sid),
-            BoxLink(f"{part_id}.OUT", switch_in, sid),
-            BoxLink(switch_out, f"{exit_}.L", sid),
-            BoxLink(f"{exit_}.R", f"{string.inverter_id}.{string.mppt_id}", sid),
-        ]
-        if layout == "per_string" or index <= 2:
-            links.append(BoxLink(f"{part_id}.OUT", f"{spd_id}.{spd_port}", sid))
-        if "ie_a" in values:
-            disconnects.append(
-                {
-                    "id": part_id,
-                    "integrated_in": None,
-                    "poles": poles,
-                    "ue_v": values["ue_v"],
-                    "ie_a": values["ie_a"],
-                    "model": values.get("model"),
-                }
-            )
-            rows.append(
-                (
-                    part_id,
-                    "Fusible gPV (cadena)" if is_fuse else "ITM de CD (cadena)",
-                    str(poles),
-                    f"{_g(values['ie_a'])} A",
-                    f"{_g(values['ue_v'])} V",
-                    "—",
-                    "Caja CD",
-                )
-            )
-
-    inverter_id = strings[0].inverter_id
-    first = next((p for p in protections if p.rating_a is not None), None)
     spds: list[dict[str, Any]] = []
+    box_of: dict[str, str] = {}
+    for box_number, strings in groups:
+        n = len(strings)
+        protections: list[DcOcpdChoice] = []
+        shared_switch, shared_spd = box_part_ids(box_number)
+        box_name = box_id(box_number, len(groups))
+        first_child = len(children)
+        switch_block = dc_disconnect_name(n)
+        for index, string in enumerate(strings, start=1):
+            sid = string.string_id
+            module = modules[string.module_id]
+            need = bos.string_need(
+                max_series_fuse_a=module.max_series_fuse_a,
+                isc_a=string.isc_a,
+                strings_per_input=string.n_parallel,
+                voc_cold_string_v=string.voc_max_string_v,
+                poles=ocpd_poles,
+            )
+            required, why = bos.string_ocpd_required(module, string.isc_a, string.n_parallel)
+            reason = why if required else f"{why} {DESIGN_CHOICE_ES}"
+            choice = _protection(need, device, registry, reason)
+            protections.append(choice)
+            is_fuse = choice.device == "fuse"
+            prefix = STRING_FUSE_PREFIX if is_fuse else STRING_BREAKER_PREFIX
+            block = "PVSLD_FUSE_DISC_DC" if is_fuse else "PVSLD_CB_DC"
+            part_id = f"{prefix}{sid}"
+            values: dict[str, Any] = {}
+            if choice.rating_a is not None:
+                values = {"ie_a": choice.rating_a, "ue_v": choice.ue_v, "model": choice.device_id}
+            values, kept = lock.keep(part_id, values)
+            poles = choice.poles or ocpd_poles
+            connector, entry, exit_ = f"CX-{sid}", f"XE-{sid}", f"XS-{sid}"
+            children.extend(
+                [
+                    BoxChild(
+                        connector,
+                        "pv_connector",
+                        "PVSLD_PV_CONNECTOR",
+                        "connector",
+                        _ports("PVSLD_PV_CONNECTOR"),
+                        (sid,),
+                        f"Conector de campo de la cadena {sid}.",
+                    ),
+                    BoxChild(
+                        entry,
+                        "terminal",
+                        "PVSLD_TERMINAL",
+                        "entry",
+                        _ports("PVSLD_TERMINAL"),
+                        (sid,),
+                        f"Borne de entrada de la cadena {sid} a la caja.",
+                    ),
+                    BoxChild(
+                        part_id,
+                        "dc_fuse_holder" if is_fuse else "dc_breaker",
+                        block,
+                        "protection",
+                        _ports(block),
+                        (sid,),
+                        choice.reason_es,
+                        poles=poles,
+                        values={k: v for k, v in values.items() if k != "model"},
+                        requirements={
+                            "minimum_a": round(need.minimum_a, 2),
+                            "maximum_a": need.maximum_a,
+                            "voc_cold_v": round(need.voc_cold_v, 1),
+                            "fault_a": round(need.fault_a, 2),
+                        },
+                        model=values.get("model"),
+                        source="drawn" if kept else "engine",
+                    ),
+                    BoxChild(
+                        exit_,
+                        "terminal",
+                        "PVSLD_TERMINAL",
+                        "exit",
+                        _ports("PVSLD_TERMINAL"),
+                        (sid,),
+                        f"Borne de salida de la cadena {sid} hacia el inversor.",
+                    ),
+                ]
+            )
+            if layout == "per_string":
+                switch_id, spd_id = f"{SWITCH_PREFIX}{sid}", f"{SPD_PREFIX}{sid}"
+                switch_in, switch_out, spd_port = f"{switch_id}.IN", f"{switch_id}.OUT", "L"
+            else:
+                switch_id, spd_id = shared_switch, shared_spd
+                switch_in, switch_out = f"{switch_id}.IN{index}", f"{switch_id}.OUT{index}"
+                spd_port = f"L{index}"
+            links += [
+                BoxLink(f"{sid}.OUT", f"{connector}.IN", sid),
+                BoxLink(f"{connector}.OUT", f"{entry}.L", sid),
+                BoxLink(f"{entry}.R", f"{part_id}.IN", sid),
+                BoxLink(f"{part_id}.OUT", switch_in, sid),
+                BoxLink(switch_out, f"{exit_}.L", sid),
+                BoxLink(f"{exit_}.R", f"{string.inverter_id}.{string.mppt_id}", sid),
+            ]
+            if layout == "per_string" or index <= 2:
+                links.append(BoxLink(f"{part_id}.OUT", f"{spd_id}.{spd_port}", sid))
+            if "ie_a" in values:
+                disconnects.append(
+                    {
+                        "id": part_id,
+                        "integrated_in": None,
+                        "poles": poles,
+                        "ue_v": values["ue_v"],
+                        "ie_a": values["ie_a"],
+                        "model": values.get("model"),
+                    }
+                )
+                rows.append(
+                    (
+                        part_id,
+                        "Fusible gPV (cadena)" if is_fuse else "ITM de CD (cadena)",
+                        str(poles),
+                        f"{_g(values['ie_a'])} A",
+                        f"{_g(values['ue_v'])} V",
+                        "—",
+                        "Caja CD",
+                    )
+                )
 
-    def add_spd(spd_id: str, members: list[Any], block: str) -> None:
-        voc = max(s.voc_max_string_v for s in members)
-        values, needs, assumption = _spd_values(voc, sum(s.isc_a for s in members), registry)
-        values, kept = lock.keep(spd_id, values)
-        if assumption is not None:
-            assumptions.append(assumption.replace(SPD_ID, spd_id, 1))
-        spds.append(
-            {
-                "id": spd_id,
-                "at": f"{inverter_id}.dc",
-                **{k: v for k, v in values.items() if v is not None},
-            }
-        )
-        children.append(
-            BoxChild(
-                spd_id,
-                "dc_spd",
-                block,
-                "spd",
-                _ports(block),
-                tuple(s.string_id for s in members),
-                f"DPS de CD: U_CPV >= {_n(voc)} V (SPD-002), In >= {_g(SPD_IN_MIN_KA)} kA "
-                f"(SPD-003), I_SCPV >= {_n(needs['iscpv_min_a'])} A (SPD-004).",
-                values={k: v for k, v in values.items() if k != "model"},
-                requirements=needs,
-                model=values.get("model"),
-                source="drawn" if kept else "engine",
-            )
-        )
-        volts = values.get("ucpv_v")
-        rows.append(
-            (
-                spd_id,
-                f"DPS de CD tipo {values['spd_type']}",
-                "—",
-                f"In {_g(values['in_ka'])} kA",
-                f"{_g(volts)} V" if volts else "—",
-                "—",
-                "Caja CD",
-            )
-        )
+        at = f"{strings[0].inverter_id}.dc"
+        first = next((p for p in protections if p.rating_a is not None), None)
 
-    def add_switch(
-        switch_id: str, members: list[Any], block: str, poles_per_string: int | None
-    ) -> None:
-        count = len(members)
-        voc = max(s.voc_max_string_v for s in members)
-        i_max = max(calc.ISC_SAFETY_FACTOR * s.isc_a for s in members)
-        per_string = bos.box_switch_poles_per_string(count, poles_per_string)
-        switch, found = bos.select_box_switch(
-            position=switch_id,
-            n_strings=count,
-            voc_cold_string_v=voc,
-            string_i_max_a=i_max,
-            switches=registry.dc_switches(),
-            poles_per_string=poles_per_string,
-        )
-        if switch is not None:
-            values: dict[str, Any] = {
-                "poles": switch.poles,
-                "ue_v": switch.voltage_v,
-                "ie_a": switch.rating_a,
-                "model": switch.device_id,
-            }
-            used = per_string * count
-            reason = (
-                f"Seccionador de la caja: {per_string} polos por cadena para {count} cadena(s), "
-                f"{_g(switch.rating_a)} A a {_g(switch.voltage_v)} V (>= {_n(i_max)} A, "
-                f">= {_n(voc)} V)."
-            )
-            if (switch.poles or 0) > used:
-                reason += f" Usa {used} de sus {switch.poles} polos."
-        else:
-            values = {
-                "poles": per_string * count,
-                "ue_v": first.ue_v if first else None,
-                "ie_a": first.rating_a if first else None,
-            }
-            reason = found[0].message_es if found else ""
-            assumptions.append(
-                f"{switch_id}: sin seccionador adecuado en el catálogo; toma los valores de la "
-                "protección de cadena."
-            )
-        values, kept = lock.keep(switch_id, values)
-        children.append(
-            BoxChild(
-                switch_id,
-                "dc_switch",
-                block,
-                "switch",
-                _ports(block),
-                tuple(s.string_id for s in members),
-                reason,
-                poles=values.get("poles"),
-                values={k: v for k, v in values.items() if k not in ("model", "poles")},
-                requirements={
-                    "poles_min": per_string * count,
-                    "ie_min_a": round(i_max, 2),
-                    "ue_min_v": round(voc, 1),
-                },
-                model=values.get("model"),
-                source="drawn" if kept else "engine",
-            )
-        )
-        if values.get("ie_a") is not None and values.get("ue_v") is not None:
-            disconnects.append(
+        def add_spd(spd_id: str, members: list[Any], block: str, at: str) -> None:
+            voc = max(s.voc_max_string_v for s in members)
+            values, needs, assumption = _spd_values(voc, sum(s.isc_a for s in members), registry)
+            values, kept = lock.keep(spd_id, values)
+            if assumption is not None:
+                assumptions.append(assumption.replace(SPD_ID, spd_id, 1))
+            spds.append(
                 {
-                    "id": switch_id,
-                    "integrated_in": None,
-                    "poles": values["poles"],
-                    "ue_v": values["ue_v"],
-                    "ie_a": values["ie_a"],
-                    "model": values.get("model"),
+                    "id": spd_id,
+                    "at": at,
+                    **{k: v for k, v in values.items() if v is not None},
                 }
             )
+            children.append(
+                BoxChild(
+                    spd_id,
+                    "dc_spd",
+                    block,
+                    "spd",
+                    _ports(block),
+                    tuple(s.string_id for s in members),
+                    f"DPS de CD: U_CPV >= {_n(voc)} V (SPD-002), In >= {_g(SPD_IN_MIN_KA)} kA "
+                    f"(SPD-003), I_SCPV >= {_n(needs['iscpv_min_a'])} A (SPD-004).",
+                    values={k: v for k, v in values.items() if k != "model"},
+                    requirements=needs,
+                    model=values.get("model"),
+                    source="drawn" if kept else "engine",
+                )
+            )
+            volts = values.get("ucpv_v")
             rows.append(
                 (
-                    switch_id,
-                    "Desconectador de CD",
-                    str(values["poles"]),
-                    f"{_g(values['ie_a'])} A",
-                    f"{_g(values['ue_v'])} V",
+                    spd_id,
+                    f"DPS de CD tipo {values['spd_type']}",
+                    "—",
+                    f"In {_g(values['in_ka'])} kA",
+                    f"{_g(volts)} V" if volts else "—",
                     "—",
                     "Caja CD",
                 )
             )
 
-    if layout == "per_string":
-        for string in strings:
-            add_spd(f"{SPD_PREFIX}{string.string_id}", [string], "PVSLD_SPD")
-            add_switch(
-                f"{SWITCH_PREFIX}{string.string_id}",
-                [string],
-                "PVSLD_DC_DISCONNECT",
-                bos.STRING_SWITCH_POLES,
+        def add_switch(
+            switch_id: str,
+            members: list[Any],
+            block: str,
+            poles_per_string: int | None,
+            fallback: DcOcpdChoice | None,
+        ) -> None:
+            count = len(members)
+            voc = max(s.voc_max_string_v for s in members)
+            i_max = max(calc.ISC_SAFETY_FACTOR * s.isc_a for s in members)
+            per_string = bos.box_switch_poles_per_string(count, poles_per_string)
+            switch, found = bos.select_box_switch(
+                position=switch_id,
+                n_strings=count,
+                voc_cold_string_v=voc,
+                string_i_max_a=i_max,
+                switches=registry.dc_switches(),
+                poles_per_string=poles_per_string,
             )
-    else:
-        add_spd(SPD_ID, list(strings), "PVSLD_SPD_DC_BOX")
-        add_switch(BOX_SWITCH_ID, list(strings), switch_block, None)
+            if switch is not None:
+                values: dict[str, Any] = {
+                    "poles": switch.poles,
+                    "ue_v": switch.voltage_v,
+                    "ie_a": switch.rating_a,
+                    "model": switch.device_id,
+                }
+                used = per_string * count
+                reason = (
+                    f"Seccionador de la caja: {per_string} polos por cadena para {count} "
+                    f"cadena(s), "
+                    f"{_g(switch.rating_a)} A a {_g(switch.voltage_v)} V (>= {_n(i_max)} A, "
+                    f">= {_n(voc)} V)."
+                )
+                if (switch.poles or 0) > used:
+                    reason += f" Usa {used} de sus {switch.poles} polos."
+            else:
+                values = {
+                    "poles": per_string * count,
+                    "ue_v": fallback.ue_v if fallback else None,
+                    "ie_a": fallback.rating_a if fallback else None,
+                }
+                reason = found[0].message_es if found else ""
+                assumptions.append(
+                    f"{switch_id}: sin seccionador adecuado en el catálogo; toma los valores de la "
+                    "protección de cadena."
+                )
+            values, kept = lock.keep(switch_id, values)
+            children.append(
+                BoxChild(
+                    switch_id,
+                    "dc_switch",
+                    block,
+                    "switch",
+                    _ports(block),
+                    tuple(s.string_id for s in members),
+                    reason,
+                    poles=values.get("poles"),
+                    values={k: v for k, v in values.items() if k not in ("model", "poles")},
+                    requirements={
+                        "poles_min": per_string * count,
+                        "ie_min_a": round(i_max, 2),
+                        "ue_min_v": round(voc, 1),
+                    },
+                    model=values.get("model"),
+                    source="drawn" if kept else "engine",
+                )
+            )
+            if values.get("ie_a") is not None and values.get("ue_v") is not None:
+                disconnects.append(
+                    {
+                        "id": switch_id,
+                        "integrated_in": None,
+                        "poles": values["poles"],
+                        "ue_v": values["ue_v"],
+                        "ie_a": values["ie_a"],
+                        "model": values.get("model"),
+                    }
+                )
+                rows.append(
+                    (
+                        switch_id,
+                        "Desconectador de CD",
+                        str(values["poles"]),
+                        f"{_g(values['ie_a'])} A",
+                        f"{_g(values['ue_v'])} V",
+                        "—",
+                        "Caja CD",
+                    )
+                )
+
+        if layout == "per_string":
+            for string in strings:
+                add_spd(f"{SPD_PREFIX}{string.string_id}", [string], "PVSLD_SPD", at)
+                add_switch(
+                    f"{SWITCH_PREFIX}{string.string_id}",
+                    [string],
+                    "PVSLD_DC_DISCONNECT",
+                    bos.STRING_SWITCH_POLES,
+                    first,
+                )
+        else:
+            add_spd(shared_spd, list(strings), "PVSLD_SPD_DC_BOX", at)
+            add_switch(shared_switch, list(strings), switch_block, None, first)
+        box_of.update({child.id: box_name for child in children[first_child:]})
+    placed = tuple(dataclasses.replace(child, box=box_of[child.id]) for child in children)
     return DcBox(
         draft,
-        children=tuple(children),
+        children=placed,
         links=tuple(links),
         rows=tuple(rows),
         disconnects=tuple(disconnects),

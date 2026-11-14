@@ -13,8 +13,10 @@ from typing import Any, Literal
 
 FORMAT = "pvsld.capabilities/1"
 
-MAX_INVERTERS = 1
+MAX_INVERTERS: int | None = None
+"""No limit on string inverters per design (owner 2026-11-13; they share one breaker)."""
 MAX_STRINGS = 2
+"""Strings per string inverter (one on each of its inputs A and B)."""
 SUPPORTED_INVERTER_TYPES = frozenset({"string", "hybrid", "micro"})
 MAX_MICRO_MODELS = 1
 INVERTER_DC_PORTS = ("A", "B")
@@ -41,7 +43,9 @@ CAPABILITIES: tuple[Capability, ...] = (
         "inverters.count",
         "Número de inversores",
         "supported",
-        f"Hasta {MAX_INVERTERS} inversor por diseño; varios inversores están pendientes.",
+        "Cualquier cantidad de inversores de cadena, de modelos iguales o distintos, con sus "
+        "salidas unidas a un solo ITM compartido (1.25 × la suma de sus corrientes). El "
+        "dimensionamiento automático y el plano A3 todavía usan un inversor.",
     ),
     Capability(
         "inverters.type",
@@ -60,7 +64,7 @@ CAPABILITIES: tuple[Capability, ...] = (
         "strings.count",
         "Número de cadenas",
         "supported",
-        f"Hasta {MAX_STRINGS} cadenas; más cadenas están pendientes.",
+        f"Hasta {MAX_STRINGS} cadenas por inversor; más cadenas están pendientes.",
     ),
     Capability(
         "strings.mppt",
@@ -177,7 +181,8 @@ def capabilities() -> dict[str, Any]:
         "limits": {
             "max_inverters": MAX_INVERTERS,
             "max_micro_models": MAX_MICRO_MODELS,
-            "max_strings": MAX_STRINGS,
+            "max_strings": None,
+            "max_strings_per_inverter": MAX_STRINGS,
             "inverter_types": sorted(SUPPORTED_INVERTER_TYPES),
             "inverter_dc_ports": list(INVERTER_DC_PORTS),
             "utility_systems": list(SUPPORTED_SYSTEMS),
